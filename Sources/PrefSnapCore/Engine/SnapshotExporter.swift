@@ -91,6 +91,10 @@ public struct SnapshotExporter: Sendable {
     // MARK: - 1 & 2. defaults 読み取り
 
     private func readDefaultsValue(for descriptor: SettingDescriptor) throws -> DefaultsValue? {
+        if descriptor.valueType == .data {
+            return try readDefaultsDataValue(for: descriptor)
+        }
+
         var args: [String] = []
         if descriptor.isByHost {
             args.append("-currentHost")
@@ -145,7 +149,48 @@ public struct SnapshotExporter: Sendable {
             return nil
         case .string:
             return .string(trimmed)
+        case .data:
+            return nil
         }
+    }
+
+    /// `defaults [-currentHost] export <domain> -` を使い、`Data` 型キーの完全なバイト列を読み取る。
+    /// `defaults read` は長い `Data` を `...` で省略するため、`export` の XML plist 出力をパースしてロスレス取得する。
+    private func readDefaultsDataValue(for descriptor: SettingDescriptor) throws -> DefaultsValue? {
+        var args: [String] = []
+        if descriptor.isByHost {
+            args.append("-currentHost")
+        }
+        args.append(contentsOf: ["export", descriptor.domain, "-"])
+
+        let output = try commandRunner.run(executable: "/usr/bin/defaults", arguments: args)
+        if output.exitCode != 0 {
+            let lowerErr = output.stderr.lowercased()
+            if lowerErr.contains("does not exist") || (lowerErr.contains("domain") && lowerErr.contains("not found")) {
+                return nil
+            }
+            if lowerErr.contains("permission denied") || lowerErr.contains("operation not permitted") || lowerErr.contains("not permitted") {
+                throw PrefSnapError.permissionDenied(
+                    target: "\(descriptor.domain) (\(descriptor.key))",
+                    detail: output.stderr.trimmingCharacters(in: .whitespacesAndNewlines),
+                    settingsURL: SystemPreferencesURL.fullDiskAccess
+                )
+            }
+            return nil
+        }
+
+        let trimmed = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let xmlData = output.stdout.data(using: .utf8) else {
+            return nil
+        }
+
+        let plist = try PropertyListSerialization.propertyList(from: xmlData, options: [], format: nil)
+        guard let dict = plist as? [String: Any],
+              let rawData = dict[descriptor.key] as? Data
+        else {
+            return nil
+        }
+        return .data(rawData)
     }
 
     // MARK: - 2-b. 動的メニューバー表示キー（com.apple.controlcenter.plist）

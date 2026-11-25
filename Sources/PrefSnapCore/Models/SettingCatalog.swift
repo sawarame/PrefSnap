@@ -26,6 +26,7 @@ public enum SettingSubcategory: String, CaseIterable, Codable, Hashable, Sendabl
     case finder = "Finder"
     case keyboardTrackpad = "キーボード / トラックパッド"
     case screenshot = "スクリーンショット"
+    case controlCenterLayout = "コントロールセンター配置 (macOS 26+)"
     case controlCenter = "コントロールセンター (ByHost)"
     case menuBarVisibility = "メニューバー表示"
     case clock = "メニューバー時計"
@@ -37,6 +38,7 @@ public enum SettingValueType: String, Codable, Equatable, Sendable {
     case int
     case double
     case string
+    case data
 }
 
 /// 設定適用後に再起動が必要な macOS プロセス。
@@ -129,7 +131,38 @@ public struct SettingDescriptor: Identifiable, Equatable, Hashable, Sendable {
             }
         }
 
+        if case let .data(rawData) = value {
+            return Self.formatControlCenterDataSummary(id: id, data: rawData)
+        }
+
         return value.displayString
+    }
+
+    /// macOS 26 のコントロールセンター／メニューバー Data 値を画面向けに要約する。
+    private static func formatControlCenterDataSummary(id: String, data: Data) -> String {
+        switch id {
+        case "menubar.controlcenter.bentoboxes":
+            if let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                return "レイアウト設定（ボックス \(array.count) 件 / \(data.count) bytes）"
+            }
+        case "menubar.controlcenter.displayableMenuExtras":
+            if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let infos = dict["displayableInfos"] as? [Any] {
+                return "メニューバー配置（\(infos.count) 件 / \(data.count) bytes）"
+            }
+        case "menubar.controlcenter.chronoControls":
+            if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let controls = dict["Controls"] as? [[String: Any]] {
+                let names = controls.compactMap { $0["DisplayName"] as? String }
+                if !names.isEmpty {
+                    return "\(names.joined(separator: "・"))（\(names.count) 件 / \(data.count) bytes）"
+                }
+                return "追加コントロール（\(controls.count) 件 / \(data.count) bytes）"
+            }
+        default:
+            break
+        }
+        return "データ (\(data.count) bytes)"
     }
 }
 
@@ -149,7 +182,7 @@ public struct SymbolicHotKeyDescriptor: Identifiable, Equatable, Hashable, Senda
 
 /// MVP でサポートする全プリセット項目のカタログ定義。
 public enum SettingCatalog {
-    /// システム基本設定（34 項目）＋メニューバーコントロール（34 項目）＝計 68 項目。
+    /// システム基本設定（34 項目）＋メニューバーコントロール（37 項目）＝計 71 項目。
     public static let defaultsItems: [SettingDescriptor] = dockItems + finderItems + keyboardTrackpadItems + screenshotItems + menuBarItems
 
     /// 動的検出された `com.apple.controlcenter` の `NSStatusItem Visible*` / `VisibleCC *` キーに付与する ID プレフィックス。
@@ -588,11 +621,50 @@ public enum SettingCatalog {
         )
     ]
 
-    /// メニューバーコントロール関連（34 項目）
+    /// メニューバーコントロール関連（37 項目）
+    /// - macOS 26 (Tahoe) のコントロールセンター／メニューバー実体配置（`bentoboxes` / `displayablemenuextras` / `ChronoControls`）
     /// - `ByHost` の `com.apple.controlcenter`（macOS 14〜15 互換および現行モジュール設定）
-    /// - 通常ドメインの `com.apple.controlcenter`（macOS 26 Tahoe 等の `NSStatusItem Visible*` / `VisibleCC *`）
+    /// - 通常ドメインの `com.apple.controlcenter`（`NSStatusItem Visible*` / `VisibleCC *`）
     /// - `com.apple.menuextra.clock`（時計の詳細表示）
     public static let menuBarItems: [SettingDescriptor] = [
+        // MARK: macOS 26 (Tahoe) コントロールセンター／メニューバー実体配置
+        SettingDescriptor(
+            id: "menubar.controlcenter.bentoboxes",
+            category: .menuBar,
+            subcategory: .controlCenterLayout,
+            displayName: "コントロールセンター配置 (BentoBoxes)",
+            description: "macOS 26+ のコントロールセンター内コントロール配置と構成（ByHost / data）",
+            domain: "com.apple.controlcenter.bentoboxes",
+            key: "boxes",
+            valueType: .data,
+            isByHost: true,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.controlcenter.displayableMenuExtras",
+            category: .menuBar,
+            subcategory: .controlCenterLayout,
+            displayName: "メニューバー追加コントロール一覧",
+            description: "macOS 26+ でメニューバーへ追加されたコントロール一覧（ByHost / data）",
+            domain: "com.apple.controlcenter.displayablemenuextras",
+            key: "displayablesInfo",
+            valueType: .data,
+            isByHost: true,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.controlcenter.chronoControls",
+            category: .menuBar,
+            subcategory: .controlCenterLayout,
+            displayName: "追加コントロール定義 (ChronoControls)",
+            description: "macOS 26+ で登録されたダークモード等の追加コントロール定義（data）",
+            domain: "com.apple.controlcenter",
+            key: "ControlCenterDisplayableChronoControlsProviderConfiguration",
+            valueType: .data,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+
         // MARK: コントロールセンター（ByHost / -currentHost）
         SettingDescriptor(
             id: "menubar.controlcenter.wifi",

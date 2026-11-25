@@ -36,6 +36,14 @@ struct SnapshotExporterTests {
             "UnrelatedKey": "ignored"
         ], at: plistStore.preferencesDirectory.appendingPathComponent("com.apple.controlcenter.plist"))
 
+        // 2-c. macOS 26 (Tahoe) コントロールセンター配置データ（Data 型）
+        let bentoData = Data("[{\"menuBarIconName\":\"circle.grid.2x2\"}]".utf8)
+        let extrasData = Data("{\"displayableInfos\":[{\"id\":\"wifi\"}]}".utf8)
+        let chronoData = Data("{\"Controls\":[{\"DisplayName\":\"ダークモード\"}]}".utf8)
+        commandRunner.setDefaultsData(domain: "com.apple.controlcenter.bentoboxes", key: "boxes", data: bentoData, isByHost: true)
+        commandRunner.setDefaultsData(domain: "com.apple.controlcenter.displayablemenuextras", key: "displayablesInfo", data: extrasData, isByHost: true)
+        commandRunner.setDefaultsData(domain: "com.apple.controlcenter", key: "ControlCenterDisplayableChronoControlsProviderConfiguration", data: chronoData, isByHost: false)
+
         // 3. システム標準ショートカット
         let hotKeysURL = plistStore.preferencesDirectory.appendingPathComponent("com.apple.symbolichotkeys.plist")
         try plistStore.setPlist([
@@ -113,6 +121,11 @@ struct SnapshotExporterTests {
         }
         #expect(visibleCCBatteryInvocations.count == 1)
         #expect(visibleCCBatteryInvocations.first?.arguments.first != "-currentHost")
+
+        // macOS 26 コントロールセンター Data 項目が defaults [-currentHost] export 経由でロスレス取得されていること
+        #expect(report.snapshot.menuBar["menubar.controlcenter.bentoboxes"]?.value == .data(bentoData))
+        #expect(report.snapshot.menuBar["menubar.controlcenter.displayableMenuExtras"]?.value == .data(extrasData))
+        #expect(report.snapshot.menuBar["menubar.controlcenter.chronoControls"]?.value == .data(chronoData))
 
         // 標準ショートカット
         #expect(

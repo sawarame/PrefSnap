@@ -110,11 +110,51 @@ struct SnapshotSerializerTests {
         }
         #expect(clockItems.count == 6)
 
+        let layoutCC = SettingCatalog.defaultsItems.filter {
+            $0.subcategory == .controlCenterLayout
+        }
+        #expect(layoutCC.count == 3)
+        let allLayoutAreData = layoutCC.allSatisfy { $0.valueType == .data }
+        #expect(allLayoutAreData)
+
         // 動的メニューバー表示キーから SettingDescriptor を復元できること
         let dynamicID = SettingCatalog.dynamicMenuBarStatusItemID(forKey: "NSStatusItem Visible Shortcuts")
         let dynamicDescriptor = SettingCatalog.dynamicMenuBarDescriptor(forID: dynamicID)
         #expect(dynamicDescriptor?.domain == "com.apple.controlcenter")
         #expect(dynamicDescriptor?.key == "NSStatusItem Visible Shortcuts")
         #expect(dynamicDescriptor?.isByHost == false)
+    }
+
+    @Test("DefaultsValue.data（UTF-8 JSON および任意バイナリ）が JSON 往復でロスレス復元されること")
+    func defaultsValueDataRoundTripsLosslesslyInJSON() throws {
+        let utf8JSON = Data("{\"Controls\":[{\"DisplayName\":\"ダークモード\"}]}".utf8)
+        let rawBinary = Data([0x00, 0xFF, 0xFE, 0x10, 0x20])
+
+        let serializer = SnapshotSerializer()
+        let snapshot = PrefSnapSnapshot(
+            exportedAt: "2026-11-25T14:00:00Z",
+            sourceHost: SourceHostMetadata(hostName: "Mac-26", osVersion: "macOS 26.7", architecture: "arm64"),
+            systemDefaults: [:],
+            menuBar: [
+                "menubar.controlcenter.chronoControls": NullableValue(.data(utf8JSON)),
+                "menubar.controlcenter.bentoboxes": NullableValue(.data(rawBinary))
+            ],
+            symbolicHotKeys: [:],
+            appShortcuts: [:],
+            modifierMappings: []
+        )
+
+        let encoded = try serializer.encode(snapshot)
+        let jsonText = try #require(String(data: encoded, encoding: .utf8))
+        #expect(jsonText.contains("ダークモード"))
+        #expect(jsonText.contains("\"encoding\" : \"utf8\""))
+        #expect(jsonText.contains("\"encoding\" : \"base64\""))
+
+        let decoded = try serializer.decode(encoded)
+        #expect(decoded.menuBar["menubar.controlcenter.chronoControls"]?.value == .data(utf8JSON))
+        #expect(decoded.menuBar["menubar.controlcenter.bentoboxes"]?.value == .data(rawBinary))
+
+        let chronoDescriptor = try #require(SettingCatalog.defaultsItemsByID["menubar.controlcenter.chronoControls"])
+        #expect(chronoDescriptor.formatDisplayValue(.data(utf8JSON)).contains("ダークモード"))
     }
 }

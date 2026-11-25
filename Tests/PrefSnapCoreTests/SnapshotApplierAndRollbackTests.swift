@@ -406,4 +406,90 @@ struct SnapshotApplierAndRollbackTests {
         #expect(writeDisplayInvocations.count == 1)
         #expect(writeDisplayInvocations.first?.arguments.first != "-currentHost")
     }
+
+    @Test("macOS 26 コントロールセンター配置（Data 型）が defaults -data で適用され、ロールバックで元へ戻ること")
+    func macOS26ControlCenterDataAppliesViaDefaultsDataAndRollsBackCleanly() throws {
+        let commandRunner = MockCommandRunner()
+        let plistStore = MockPlistStore()
+        let keyboardDetector = MockKeyboardDetector()
+        let fileStore = MockFileStore()
+        let processController = MockProcessController()
+        let environment = MockEnvironmentProvider()
+
+        let originalBento = Data("[{\"menuBarIconName\":\"circle.grid.2x2\",\"v\":1}]".utf8)
+        let targetBento = Data("[{\"menuBarIconName\":\"circle.grid.2x2\",\"v\":2}]".utf8)
+        let targetChrono = Data("{\"Controls\":[{\"DisplayName\":\"ダークモード\"}]}".utf8)
+
+        commandRunner.setDefaultsData(domain: "com.apple.controlcenter.bentoboxes", key: "boxes", data: originalBento, isByHost: true)
+
+        let exporter = SnapshotExporter(
+            commandRunner: commandRunner,
+            plistStore: plistStore,
+            keyboardDetector: keyboardDetector,
+            environment: environment
+        )
+        let backupManager = BackupManager(fileStore: fileStore, environment: environment)
+        let applier = SnapshotApplier(
+            commandRunner: commandRunner,
+            plistStore: plistStore,
+            keyboardDetector: keyboardDetector,
+            processController: processController,
+            backupManager: backupManager,
+            exporter: exporter
+        )
+
+        let bentoDesc = try #require(SettingCatalog.defaultsItemsByID["menubar.controlcenter.bentoboxes"])
+        let chronoDesc = try #require(SettingCatalog.defaultsItemsByID["menubar.controlcenter.chronoControls"])
+
+        let items: [DiffItem] = [
+            DiffItem(
+                id: "defaults:\(bentoDesc.id)",
+                category: .menuBar,
+                subcategoryLabel: bentoDesc.subcategory.rawValue,
+                title: bentoDesc.displayName,
+                detail: "",
+                beforeDisplay: bentoDesc.formatDisplayValue(.data(originalBento)),
+                afterDisplay: bentoDesc.formatDisplayValue(.data(targetBento)),
+                action: .defaultsSetting(descriptor: bentoDesc, newValue: .data(targetBento)),
+                restartTargets: bentoDesc.restartTargets,
+                requiresRelogin: false,
+                isSelected: true
+            ),
+            DiffItem(
+                id: "defaults:\(chronoDesc.id)",
+                category: .menuBar,
+                subcategoryLabel: chronoDesc.subcategory.rawValue,
+                title: chronoDesc.displayName,
+                detail: "",
+                beforeDisplay: "未設定（初期値）",
+                afterDisplay: chronoDesc.formatDisplayValue(.data(targetChrono)),
+                action: .defaultsSetting(descriptor: chronoDesc, newValue: .data(targetChrono)),
+                restartTargets: chronoDesc.restartTargets,
+                requiresRelogin: false,
+                isSelected: true
+            )
+        ]
+
+        let result = applier.apply(items: items, createBackupBeforeApply: true)
+        #expect(result.issues.isEmpty)
+        #expect(result.appliedCount == 2)
+        #expect(Set(result.restartedProcesses) == [.controlCenter, .systemUIServer])
+        #expect(commandRunner.storedDefaultsData(domain: "com.apple.controlcenter.bentoboxes", key: "boxes", isByHost: true) == targetBento)
+        #expect(commandRunner.storedDefaultsData(domain: "com.apple.controlcenter", key: "ControlCenterDisplayableChronoControlsProviderConfiguration", isByHost: false) == targetChrono)
+
+        // defaults -currentHost write ... -data <hex> で書き込まれたこと
+        let bentoWrite = commandRunner.recordedInvocations().first {
+            $0.arguments.contains("com.apple.controlcenter.bentoboxes") && $0.arguments.contains("write")
+        }
+        #expect(bentoWrite?.arguments.first == "-currentHost")
+        #expect(bentoWrite?.arguments.contains("-data") == true)
+
+        // ロールバックで bentoboxes は元データへ、chronoControls は未設定（削除）へ戻ること
+        let backup = try #require(result.backupRecord)
+        let rollbackResult = try applier.rollback(to: backup)
+        #expect(rollbackResult.issues.isEmpty)
+        #expect(commandRunner.storedDefaultsData(domain: "com.apple.controlcenter.bentoboxes", key: "boxes", isByHost: true) == originalBento)
+        #expect(commandRunner.storedDefaultsData(domain: "com.apple.controlcenter", key: "ControlCenterDisplayableChronoControlsProviderConfiguration", isByHost: false) == nil)
+        #expect(Set(rollbackResult.restartedProcesses) == [.controlCenter, .systemUIServer])
+    }
 }

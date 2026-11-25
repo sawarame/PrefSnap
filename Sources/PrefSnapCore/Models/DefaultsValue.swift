@@ -6,6 +6,7 @@ public enum DefaultsValue: Equatable, Hashable, Sendable {
     case int(Int)
     case double(Double)
     case string(String)
+    case data(Data)
     case array([DefaultsValue])
     case dictionary([String: DefaultsValue])
 
@@ -23,6 +24,8 @@ public enum DefaultsValue: Equatable, Hashable, Sendable {
             return String(value)
         case let .string(value):
             return value
+        case let .data(data):
+            return "データ (\(data.count) bytes)"
         case let .array(values):
             return "[" + values.map(\.displayString).joined(separator: ", ") + "]"
         case let .dictionary(dict):
@@ -44,6 +47,9 @@ public enum DefaultsValue: Equatable, Hashable, Sendable {
             return ["-float", String(value)]
         case let .string(value):
             return ["-string", value]
+        case let .data(data):
+            let hex = data.map { String(format: "%02x", $0) }.joined()
+            return ["-data", hex]
         case let .array(values):
             return ["-array"] + values.map(\.rawStringForDefaults)
         case let .dictionary(dict):
@@ -64,6 +70,7 @@ public enum DefaultsValue: Equatable, Hashable, Sendable {
         case let .int(value): return String(value)
         case let .double(value): return String(value)
         case let .string(value): return value
+        case let .data(data): return data.base64EncodedString()
         case .array, .dictionary: return displayString
         }
     }
@@ -79,6 +86,8 @@ public enum DefaultsValue: Equatable, Hashable, Sendable {
             return value
         case let .string(value):
             return value
+        case let .data(data):
+            return data
         case let .array(values):
             return values.map { $0.toPropertyListObject() }
         case let .dictionary(dict):
@@ -93,6 +102,9 @@ public enum DefaultsValue: Equatable, Hashable, Sendable {
     /// plist（`Any`）から `DefaultsValue` を生成する。
     /// `NSNumber` の真偽値と整数・小数を `CFBooleanGetTypeID()` で厳密に判別する。
     public static func fromPropertyListObject(_ object: Any, expectedType: SettingValueType? = nil) -> DefaultsValue? {
+        if let data = object as? Data {
+            return .data(data)
+        }
         if let number = object as? NSNumber {
             if CFGetTypeID(number) == CFBooleanGetTypeID() {
                 return .bool(number.boolValue)
@@ -107,6 +119,8 @@ public enum DefaultsValue: Equatable, Hashable, Sendable {
                     return .double(number.doubleValue)
                 case .string:
                     return .string(number.stringValue)
+                case .data:
+                    return nil
                 }
             }
             let objCType = String(cString: number.objCType)
@@ -145,6 +159,14 @@ public enum DefaultsValue: Equatable, Hashable, Sendable {
     }
 }
 
+/// `DefaultsValue.data` を JSON 内で安全かつ可読性高く表現するための内部エンベロープ。
+/// UTF-8 として往復完全一致するデータは `utf8` 文字列のまま保持し、それ以外のバイナリは `base64` で保持する。
+private struct EncodedDataPayload: Codable {
+    let __type: String
+    let encoding: String
+    let value: String
+}
+
 extension DefaultsValue: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -159,6 +181,24 @@ extension DefaultsValue: Codable {
             self = .string(stringVal)
         } else if let arrayVal = try? container.decode([DefaultsValue].self) {
             self = .array(arrayVal)
+        } else if let payload = try? container.decode(EncodedDataPayload.self), payload.__type == "data" {
+            switch payload.encoding {
+            case "utf8":
+                self = .data(Data(payload.value.utf8))
+            case "base64":
+                guard let decoded = Data(base64Encoded: payload.value) else {
+                    throw DecodingError.dataCorruptedError(
+                        in: container,
+                        debugDescription: "Base64 データのデコードに失敗しました"
+                    )
+                }
+                self = .data(decoded)
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "未対応のデータエンコーディングです: \(payload.encoding)"
+                )
+            }
         } else if let dictVal = try? container.decode([String: DefaultsValue].self) {
             self = .dictionary(dictVal)
         } else {
@@ -183,6 +223,12 @@ extension DefaultsValue: Codable {
             try container.encode(value)
         case let .string(value):
             try container.encode(value)
+        case let .data(data):
+            if let utf8 = String(data: data, encoding: .utf8), Data(utf8.utf8) == data {
+                try container.encode(EncodedDataPayload(__type: "data", encoding: "utf8", value: utf8))
+            } else {
+                try container.encode(EncodedDataPayload(__type: "data", encoding: "base64", value: data.base64EncodedString()))
+            }
         case let .array(values):
             try container.encode(values)
         case let .dictionary(dict):
