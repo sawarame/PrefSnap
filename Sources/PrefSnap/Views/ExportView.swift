@@ -6,24 +6,96 @@ struct ExportView: View {
     @Bindable var viewModel: AppViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("設定のエクスポート")
-                        .font(.title2.bold())
-                    Text("現在の Mac から 5 カテゴリの設定を抽出し、Git 管理しやすい整形済み JSON として保存します。")
+        Group {
+            if viewModel.isBusy {
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text("現在の Mac 設定を読み取っています…")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let report = viewModel.exportReport {
+                loadedContentView(report: report)
+            } else {
+                emptyHeroView
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 初期状態: アイコン・タイトル・説明文・操作ボタンを画面中央へバランスよく 1 つに集約する。
+    private var emptyHeroView: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            Image(systemName: "square.and.arrow.up.on.square")
+                .font(.system(size: 48, weight: .light))
+                .foregroundStyle(Color.accentColor)
+
+            VStack(spacing: 8) {
+                Text("設定のエクスポート")
+                    .font(.title2.bold())
+                Text("現在の Mac から 5 カテゴリの設定を抽出し、\nGit 管理しやすい整形済み JSON として保存します。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 480)
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    viewModel.scanCurrentEnvironment()
+                } label: {
+                    Label("現在の設定を読み取る", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .fixedSize()
+                .disabled(viewModel.isBusy)
+
+                Button {
+                    viewModel.saveExportedJSONWithPanel()
+                } label: {
+                    Label("JSON として保存…", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .fixedSize()
+                .disabled(true)
+            }
+            .padding(.top, 4)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// スキャン完了後: 上部に中央揃えのヘッダー・操作ボタン・切替タブを配置し、下部に一覧を表示する。
+    @ViewBuilder
+    private func loadedContentView(report: ExportReport) -> some View {
+        VStack(spacing: 16) {
+            VStack(spacing: 10) {
+                Text("設定のエクスポート")
+                    .font(.title2.bold())
+
+                if let status = viewModel.statusMessage {
+                    Text(status)
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.center)
                 }
 
-                // タイトル・説明文の下に改行を設け、操作ボタン群を中央揃えで配置する
                 HStack(spacing: 12) {
                     Button {
                         viewModel.scanCurrentEnvironment()
                     } label: {
-                        Label("現在の設定を読み取る", systemImage: "arrow.clockwise")
+                        Label("現在の設定を再読み取り", systemImage: "arrow.clockwise")
                     }
+                    .buttonStyle(.bordered)
                     .controlSize(.large)
                     .fixedSize()
                     .disabled(viewModel.isBusy)
@@ -36,56 +108,40 @@ struct ExportView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .fixedSize()
-                    .disabled(viewModel.exportReport == nil || viewModel.isBusy)
+                    .disabled(viewModel.isBusy)
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
-            }
+                .padding(.top, 2)
 
-            Divider()
-
-            if let status = viewModel.statusMessage {
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if viewModel.isBusy {
-                ProgressView("現在の Mac 設定を読み取っています…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let report = viewModel.exportReport {
                 Picker("表示モード", selection: $viewModel.showExportJSONPreview) {
                     Text("カテゴリ一覧").tag(false)
                     Text("JSON プレビュー").tag(true)
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 320)
+                .frame(maxWidth: 300)
+                .padding(.top, 2)
+            }
+            .frame(maxWidth: .infinity)
 
-                if viewModel.showExportJSONPreview {
-                    ScrollView {
-                        Text(viewModel.exportJSONPreview)
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
-                    }
-                    .background(Color(nsColor: .textBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.secondary.opacity(0.2))
-                    )
-                } else {
-                    snapshotSummaryList(report.snapshot)
+            Divider()
+
+            if viewModel.showExportJSONPreview {
+                ScrollView {
+                    Text(viewModel.exportJSONPreview)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
                 }
-            } else {
-                ContentUnavailableView(
-                    "設定がまだ読み取られていません",
-                    systemImage: "doc.text.magnifyingglass",
-                    description: Text("上の「現在の設定を読み取る」ボタンを押すと、この Mac の設定を安全にスキャンします。")
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.2))
                 )
+            } else {
+                snapshotSummaryList(report.snapshot)
             }
         }
-        .padding(20)
     }
 
     @ViewBuilder
@@ -103,7 +159,7 @@ struct ExportView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text(value?.displayString ?? "未設定 (null)")
+                        Text(descriptor.formatDisplayValue(value))
                             .font(.callout.monospaced())
                             .foregroundStyle(value == nil ? .secondary : .primary)
                     }

@@ -21,6 +21,7 @@ struct PrefSnapApp: App {
             ContentView(viewModel: viewModel)
                 .frame(minWidth: 920, minHeight: 620)
         }
+        .windowStyle(.titleBar)
         .defaultSize(width: 1080, height: 720)
     }
 }

@@ -16,33 +16,44 @@ struct RollbackView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("履歴 / ロールバック")
-                        .font(.title2.bold())
-                    Text("保存場所: \(viewModel.backupDirectoryPath)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-                Spacer()
-                Button {
-                    viewModel.refreshBackups()
-                } label: {
-                    Label("一覧を更新", systemImage: "arrow.clockwise")
-                }
-                .disabled(viewModel.isBusy)
+            VStack(spacing: 10) {
+                Text("履歴 / ロールバック")
+                    .font(.title2.bold())
 
-                if let selected = viewModel.selectedBackup {
+                Text("保存場所: \(viewModel.backupDirectoryPath)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .multilineTextAlignment(.center)
+
+                HStack(spacing: 12) {
                     Button {
-                        viewModel.executeRollback(to: selected)
+                        viewModel.refreshBackups()
                     } label: {
-                        Label("選択したバックアップへ復元", systemImage: "arrow.uturn.backward.circle.fill")
+                        Label("一覧を更新", systemImage: "arrow.clockwise")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .fixedSize()
                     .disabled(viewModel.isBusy)
+
+                    if let selected = viewModel.selectedBackup {
+                        Button {
+                            viewModel.executeRollback(to: selected)
+                        } label: {
+                            Label("選択したバックアップへ復元", systemImage: "arrow.uturn.backward.circle.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .fixedSize()
+                        .disabled(viewModel.isBusy)
+                    }
                 }
+                .padding(.top, 2)
             }
+            .frame(maxWidth: .infinity)
+
+            Divider()
 
             if let result = viewModel.lastRollbackResult {
                 VStack(alignment: .leading, spacing: 6) {

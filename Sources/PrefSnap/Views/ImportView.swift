@@ -7,24 +7,94 @@ struct ImportView: View {
     @Bindable var viewModel: AppViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("差分プレビューと選択適用（Import）")
-                        .font(.title2.bold())
-                    Text("JSON を読み込むと現在の Mac との差分のみ表示されます。適用直前に自動でバックアップを作成します。")
+        Group {
+            if viewModel.isBusy {
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text("差分を計算しています…")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if viewModel.importedFileURL == nil {
+                emptyHeroView
+            } else {
+                loadedContentView
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 初期状態: アイコン・タイトル・説明文・操作ボタンを画面中央へバランスよく 1 つに集約する。
+    private var emptyHeroView: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            Image(systemName: "square.and.arrow.down.on.square")
+                .font(.system(size: 48, weight: .light))
+                .foregroundStyle(Color.accentColor)
+
+            VStack(spacing: 8) {
+                Text("差分プレビューと選択適用（Import）")
+                    .font(.title2.bold())
+                Text("JSON ファイルを読み込むと現在の Mac との差分のみ表示されます。\n内容を確認してから項目ごとに選択適用でき、適用直前に自動バックアップを作成します。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 520)
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    viewModel.selectAndLoadImportFile()
+                } label: {
+                    Label("JSON ファイルを開く…", systemImage: "folder")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .fixedSize()
+                .disabled(viewModel.isBusy)
+
+                Button {
+                    viewModel.applySelectedDiffs()
+                } label: {
+                    Label("選択した 0 件を適用", systemImage: "checkmark.circle.fill")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .fixedSize()
+                .disabled(true)
+            }
+            .padding(.top, 4)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// ファイル読み込み後: 上部に中央揃えのヘッダー・操作ボタンを配置し、下部に差分一覧を表示する。
+    private var loadedContentView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(spacing: 10) {
+                Text("差分プレビューと選択適用（Import）")
+                    .font(.title2.bold())
+
+                if let url = viewModel.importedFileURL {
+                    Text("読み込みファイル: \(url.lastPathComponent)")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                // タイトル・説明文の下に改行を設け、操作ボタン群を中央揃えで配置する
                 HStack(spacing: 12) {
                     Button {
                         viewModel.selectAndLoadImportFile()
                     } label: {
-                        Label("JSON ファイルを開く…", systemImage: "folder")
+                        Label("別の JSON を開く…", systemImage: "folder")
                     }
+                    .buttonStyle(.bordered)
                     .controlSize(.large)
                     .fixedSize()
                     .disabled(viewModel.isBusy)
@@ -39,8 +109,9 @@ struct ImportView: View {
                     .fixedSize()
                     .disabled(viewModel.selectedApplicableDiffCount == 0 || viewModel.isBusy)
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 2)
             }
+            .frame(maxWidth: .infinity)
 
             Divider()
 
@@ -66,21 +137,20 @@ struct ImportView: View {
                 }
             }
 
-            if viewModel.isBusy {
-                ProgressView("差分を計算しています…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if viewModel.importedFileURL == nil {
-                ContentUnavailableView(
-                    "インポートする JSON ファイルを選択してください",
-                    systemImage: "arrow.left.arrow.right.square",
-                    description: Text("ファイルを読み込んでもすぐには変更されません。Before → After を確認してから適用できます。")
-                )
-            } else if viewModel.diffItems.isEmpty {
-                ContentUnavailableView(
-                    "変更が必要な項目はありません",
-                    systemImage: "checkmark.seal",
-                    description: Text("現在の Mac の設定は読み込んだ JSON と一致しています。")
-                )
+            if viewModel.diffItems.isEmpty {
+                VStack(spacing: 12) {
+                    Spacer()
+                    Image(systemName: "checkmark.seal")
+                        .font(.system(size: 40, weight: .light))
+                        .foregroundStyle(.green)
+                    Text("変更が必要な項目はありません")
+                        .font(.headline)
+                    Text("現在の Mac の設定は読み込んだ JSON と一致しています。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 HStack {
                     Text("検出された差分: \(viewModel.diffItems.count) 件（適用対象: \(viewModel.selectedApplicableDiffCount) 件）")
@@ -109,7 +179,6 @@ struct ImportView: View {
                 .listStyle(.inset)
             }
         }
-        .padding(20)
     }
 
     @ViewBuilder
