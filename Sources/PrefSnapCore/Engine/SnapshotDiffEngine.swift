@@ -24,8 +24,8 @@ public struct SnapshotDiffEngine: Sendable {
 
             // インポート JSON にキー自体が含まれていない項目は対象外とする
             guard let targetWrapped = targetDict[descriptor.id] else { continue }
-            let currentVal = currentDict[descriptor.id]?.value
-            let targetVal = targetWrapped.value
+            let currentVal = currentDict[descriptor.id]?.value?.normalized(for: descriptor.valueType)
+            let targetVal = targetWrapped.value?.normalized(for: descriptor.valueType)
 
             guard currentVal != targetVal else { continue }
 

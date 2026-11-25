@@ -172,4 +172,61 @@ struct SnapshotDiffEngineTests {
         #expect(dynamicDiff.title == "メニューバー表示: Shortcuts")
         #expect(dynamicDiff.restartTargets == [.controlCenter, .systemUIServer])
     }
+
+    @Test("小数設定項目で JSON デコードされた整数 3 と現在値 3.0 が誤って差分扱いされず、変更時も -float で適用されること")
+    func doubleSettingNormalizesDecodedIntegerToAvoidFalseDiffAndPreserveFloatType() throws {
+        let currentSame = PrefSnapSnapshot(
+            exportedAt: "2026-11-25T14:00:00Z",
+            sourceHost: host,
+            systemDefaults: [
+                "trackpad.trackingSpeed": NullableValue(.double(3.0)),
+                "dock.autohideDelay": NullableValue(.double(0.0))
+            ],
+            menuBar: [:],
+            symbolicHotKeys: [:],
+            appShortcuts: [:],
+            modifierMappings: []
+        )
+
+        // JSON 経由で `3` や `0` が `.int` としてデコードされた状態を再現
+        let targetDecodedAsInt = PrefSnapSnapshot(
+            exportedAt: "2026-11-25T14:05:00Z",
+            sourceHost: host,
+            systemDefaults: [
+                "trackpad.trackingSpeed": NullableValue(.int(3)),
+                "dock.autohideDelay": NullableValue(.int(0))
+            ],
+            menuBar: [:],
+            symbolicHotKeys: [:],
+            appShortcuts: [:],
+            modifierMappings: []
+        )
+
+        let engine = SnapshotDiffEngine()
+        let sameReport = engine.computeDiff(current: currentSame, target: targetDecodedAsInt, connectedKeyboards: [])
+        #expect(sameReport.items.isEmpty)
+
+        // 実際に値が異なる場合（2.0 -> 3）は差分として検出され、適用アクションの型が .double(3.0)（-float）に正規化されること
+        let currentDifferent = PrefSnapSnapshot(
+            exportedAt: "2026-11-25T14:00:00Z",
+            sourceHost: host,
+            systemDefaults: [
+                "trackpad.trackingSpeed": NullableValue(.double(2.0))
+            ],
+            menuBar: [:],
+            symbolicHotKeys: [:],
+            appShortcuts: [:],
+            modifierMappings: []
+        )
+        let diffReport = engine.computeDiff(current: currentDifferent, target: targetDecodedAsInt, connectedKeyboards: [])
+        let trackingDiff = try #require(diffReport.items.first { $0.id == "defaults:trackpad.trackingSpeed" })
+        #expect(trackingDiff.beforeDisplay == "2.0")
+        #expect(trackingDiff.afterDisplay == "3.0")
+        if case let .defaultsSetting(_, newValue) = trackingDiff.action {
+            #expect(newValue == .double(3.0))
+            #expect(newValue?.defaultsWriteArguments() == ["-float", "3.0"])
+        } else {
+            Issue.record("trackpad.trackingSpeed の defaultsSetting アクションが期待されます")
+        }
+    }
 }

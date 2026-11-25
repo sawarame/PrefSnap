@@ -36,6 +36,24 @@ public enum DefaultsValue: Equatable, Hashable, Sendable {
         }
     }
 
+    /// カタログで定義された期待型に合わせて数値を正規化する。
+    /// JSON では `3.0` が整数 `3` として出力・デコードされるため、`.double` 項目で
+    /// `.int(3)` と `.double(3.0)` が別値扱いされないよう型を揃える。
+    public func normalized(for valueType: SettingValueType) -> DefaultsValue {
+        switch (valueType, self) {
+        case let (.double, .int(intVal)):
+            return .double(Double(intVal))
+        case let (.int, .double(doubleVal)):
+            if doubleVal.isFinite, doubleVal.rounded() == doubleVal,
+               doubleVal >= Double(Int.min), doubleVal <= Double(Int.max) {
+                return .int(Int(doubleVal))
+            }
+            return self
+        default:
+            return self
+        }
+    }
+
     /// `defaults write` コマンドに渡す型フラグと引数配列を生成する。
     public func defaultsWriteArguments() -> [String] {
         switch self {
