@@ -25,12 +25,29 @@ swift test
 # ビルド
 swift build
 
-# アプリの起動
+# アプリの起動（CLI から直接起動）
 swift run PrefSnap
+
+# macOS アプリバンドル (.app) の組み立て
+# debug は .build/PrefSnap_dev.app (dev.prefsnap.PrefSnap.dev)
+# release は .build/PrefSnap.app (dev.prefsnap.PrefSnap) を生成
+./scripts/build-app.sh debug
+./scripts/build-app.sh release
+./scripts/build-app.sh release --universal
+
+# 配布用ディスクイメージ (.dmg) の組み立て
+./scripts/build-dmg.sh
 ```
+
+> **署名・ユニバーサルビルド用環境変数**:
+> - `PREFSNAP_UNIVERSAL=true`: `arm64` + `x86_64` のユニバーサルバイナリを生成（`--universal` と同等）
+> - `PREFSNAP_SIGN_IDENTITY="<Developer ID>"`: 指定時は Developer ID 署名（Hardened Runtime + タイムスタンプ）、未指定時はアドホック署名を適用
 
 ## パッケージ構成
 
 - `Sources/PrefSnapCore`: モデル・プリセットカタログ・プロトコル・インフラ実装・エクスポート／差分／適用／バックアップエンジン
 - `Sources/PrefSnap`: SwiftUI（`Observation` フレームワーク）によるネイティブ macOS アプリ UI
 - `Tests/PrefSnapCoreTests`: モックを用いたユニットテスト
+- `Resources/Info.plist`: `.app` バンドル組み立て時に利用するアプリ情報テンプレート
+- `scripts/build-app.sh` / `scripts/build-dmg.sh`: `.app` バンドルおよび `.dmg` ディスクイメージの組み立てスクリプト
+- `VERSION`: アプリのセマンティックバージョン定義
