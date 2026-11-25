@@ -26,7 +26,8 @@ public enum SettingSubcategory: String, CaseIterable, Codable, Hashable, Sendabl
     case finder = "Finder"
     case keyboardTrackpad = "キーボード / トラックパッド"
     case screenshot = "スクリーンショット"
-    case controlCenter = "コントロールセンター"
+    case controlCenter = "コントロールセンター (ByHost)"
+    case menuBarVisibility = "メニューバー表示"
     case clock = "メニューバー時計"
 }
 
@@ -95,6 +96,41 @@ public struct SettingDescriptor: Identifiable, Equatable, Hashable, Sendable {
         self.restartTargets = restartTargets
         self.requiresRelogin = requiresRelogin
     }
+
+    /// 画面表示用に設定値の意味をわかりやすく整形する。
+    public func formatDisplayValue(_ value: DefaultsValue?, nilLabel: String = "未設定 (null)") -> String {
+        guard let value else { return nilLabel }
+
+        if subcategory == .controlCenter, case let .int(intValue) = value {
+            switch intValue {
+            case 2:
+                return "常に表示 / アクティブ時 (2)"
+            case 8:
+                return "非表示 / アクティブ時のみ (8)"
+            case 18:
+                return "常に表示 (18)"
+            case 24:
+                return "非表示 (24)"
+            default:
+                return String(intValue)
+            }
+        }
+
+        if id == "menubar.clock.showDate", case let .int(intValue) = value {
+            switch intValue {
+            case 0:
+                return "常に表示 (0)"
+            case 1:
+                return "スペースがある場合 (1)"
+            case 2:
+                return "表示しない (2)"
+            default:
+                return String(intValue)
+            }
+        }
+
+        return value.displayString
+    }
 }
 
 /// `com.apple.symbolichotkeys` の対象ショートカット ID 定義。
@@ -113,8 +149,52 @@ public struct SymbolicHotKeyDescriptor: Identifiable, Equatable, Hashable, Senda
 
 /// MVP でサポートする全プリセット項目のカタログ定義。
 public enum SettingCatalog {
-    /// システム基本設定（34 項目）＋メニューバーコントロール（8 項目）＝計 42 項目。
+    /// システム基本設定（34 項目）＋メニューバーコントロール（34 項目）＝計 68 項目。
     public static let defaultsItems: [SettingDescriptor] = dockItems + finderItems + keyboardTrackpadItems + screenshotItems + menuBarItems
+
+    /// 動的検出された `com.apple.controlcenter` の `NSStatusItem Visible*` / `VisibleCC *` キーに付与する ID プレフィックス。
+    public static let dynamicStatusItemIDPrefix = "menubar.statusitem.dynamic."
+
+    /// 固定カタログに登録済みの通常ドメイン `com.apple.controlcenter` キー一覧（動的読み取り時の重複除外用）。
+    public static let knownControlCenterNonByHostKeys: Set<String> = Set(
+        menuBarItems
+            .filter { $0.domain == "com.apple.controlcenter" && !$0.isByHost }
+            .map(\.key)
+    )
+
+    /// 動的メニューバー表示キーに対応するスナップショット ID を生成する。
+    public static func dynamicMenuBarStatusItemID(forKey key: String) -> String {
+        "\(dynamicStatusItemIDPrefix)\(key)"
+    }
+
+    /// 動的メニューバー表示 ID（`menubar.statusitem.dynamic.<key>`）から `SettingDescriptor` を復元する。
+    public static func dynamicMenuBarDescriptor(forID id: String) -> SettingDescriptor? {
+        guard id.hasPrefix(dynamicStatusItemIDPrefix) else { return nil }
+        let rawKey = String(id.dropFirst(dynamicStatusItemIDPrefix.count))
+        guard !rawKey.isEmpty else { return nil }
+
+        let shortName: String
+        if rawKey.hasPrefix("NSStatusItem VisibleCC ") {
+            shortName = "CC: " + String(rawKey.dropFirst("NSStatusItem VisibleCC ".count))
+        } else if rawKey.hasPrefix("NSStatusItem Visible ") {
+            shortName = String(rawKey.dropFirst("NSStatusItem Visible ".count))
+        } else {
+            shortName = rawKey
+        }
+
+        return SettingDescriptor(
+            id: id,
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示: \(shortName)",
+            description: "com.apple.controlcenter の動的検出ステータス項目（\(rawKey)）",
+            domain: "com.apple.controlcenter",
+            key: rawKey,
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        )
+    }
 
     /// ID からプリセット定義を引く辞書。
     public static let defaultsItemsByID: [String: SettingDescriptor] = Dictionary(
@@ -508,15 +588,18 @@ public enum SettingCatalog {
         )
     ]
 
-    /// メニューバーコントロール関連（8 項目）
-    /// `com.apple.controlcenter` は必ず `-currentHost` / `ByHost` を対象とする。
+    /// メニューバーコントロール関連（34 項目）
+    /// - `ByHost` の `com.apple.controlcenter`（macOS 14〜15 互換および現行モジュール設定）
+    /// - 通常ドメインの `com.apple.controlcenter`（macOS 26 Tahoe 等の `NSStatusItem Visible*` / `VisibleCC *`）
+    /// - `com.apple.menuextra.clock`（時計の詳細表示）
     public static let menuBarItems: [SettingDescriptor] = [
+        // MARK: コントロールセンター（ByHost / -currentHost）
         SettingDescriptor(
             id: "menubar.controlcenter.wifi",
             category: .menuBar,
             subcategory: .controlCenter,
-            displayName: "メニューバー: Wi-Fi 表示",
-            description: "18 = 表示 / 24 = 非表示（ByHost）",
+            displayName: "コントロールセンター: Wi-Fi",
+            description: "2 または 18 = 表示 / 8 または 24 = 非表示（ByHost）",
             domain: "com.apple.controlcenter",
             key: "WiFi",
             valueType: .int,
@@ -527,8 +610,8 @@ public enum SettingCatalog {
             id: "menubar.controlcenter.bluetooth",
             category: .menuBar,
             subcategory: .controlCenter,
-            displayName: "メニューバー: Bluetooth 表示",
-            description: "18 = 表示 / 24 = 非表示（ByHost）",
+            displayName: "コントロールセンター: Bluetooth",
+            description: "2 または 18 = 表示 / 8 または 24 = 非表示（ByHost）",
             domain: "com.apple.controlcenter",
             key: "Bluetooth",
             valueType: .int,
@@ -539,10 +622,22 @@ public enum SettingCatalog {
             id: "menubar.controlcenter.sound",
             category: .menuBar,
             subcategory: .controlCenter,
-            displayName: "メニューバー: サウンド表示",
-            description: "18 = 常に表示 / 2 = アクティブ時のみ / 8 = 非表示（ByHost）",
+            displayName: "コントロールセンター: サウンド",
+            description: "18 = 常に表示 / 2 = アクティブ時 / 8・24 = 非表示（ByHost）",
             domain: "com.apple.controlcenter",
             key: "Sound",
+            valueType: .int,
+            isByHost: true,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.controlcenter.battery",
+            category: .menuBar,
+            subcategory: .controlCenter,
+            displayName: "コントロールセンター: バッテリー",
+            description: "2 または 18 = 表示 / 8 または 24 = 非表示（ByHost）",
+            domain: "com.apple.controlcenter",
+            key: "Battery",
             valueType: .int,
             isByHost: true,
             restartTargets: [.controlCenter, .systemUIServer]
@@ -551,7 +646,7 @@ public enum SettingCatalog {
             id: "menubar.controlcenter.batteryShowPercentage",
             category: .menuBar,
             subcategory: .controlCenter,
-            displayName: "メニューバー: バッテリー残量（%）を表示",
+            displayName: "コントロールセンター: バッテリー残量（%）を表示",
             description: "バッテリーアイコンの横にパーセント数値を表示する（ByHost）",
             domain: "com.apple.controlcenter",
             key: "BatteryShowPercentage",
@@ -560,17 +655,285 @@ public enum SettingCatalog {
             restartTargets: [.controlCenter, .systemUIServer]
         ),
         SettingDescriptor(
+            id: "menubar.controlcenter.display",
+            category: .menuBar,
+            subcategory: .controlCenter,
+            displayName: "コントロールセンター: ディスプレイ",
+            description: "18 = 常に表示 / 2 = アクティブ時 / 8・24 = 非表示（ByHost）",
+            domain: "com.apple.controlcenter",
+            key: "Display",
+            valueType: .int,
+            isByHost: true,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.controlcenter.focusModes",
+            category: .menuBar,
+            subcategory: .controlCenter,
+            displayName: "コントロールセンター: 集中モード",
+            description: "18 = 常に表示 / 2 = アクティブ時 / 8・24 = 非表示（ByHost）",
+            domain: "com.apple.controlcenter",
+            key: "FocusModes",
+            valueType: .int,
+            isByHost: true,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
             id: "menubar.controlcenter.nowPlaying",
             category: .menuBar,
             subcategory: .controlCenter,
-            displayName: "メニューバー: 再生中表示",
-            description: "18 = 常に表示 / 2 = アクティブ時のみ / 8 = 非表示（ByHost）",
+            displayName: "コントロールセンター: 再生中",
+            description: "18 = 常に表示 / 2 = アクティブ時 / 8・24 = 非表示（ByHost）",
             domain: "com.apple.controlcenter",
             key: "NowPlaying",
             valueType: .int,
             isByHost: true,
             restartTargets: [.controlCenter, .systemUIServer]
         ),
+        SettingDescriptor(
+            id: "menubar.controlcenter.screenMirroring",
+            category: .menuBar,
+            subcategory: .controlCenter,
+            displayName: "コントロールセンター: 画面ミラーリング",
+            description: "18 = 常に表示 / 2 = アクティブ時 / 8・24 = 非表示（ByHost）",
+            domain: "com.apple.controlcenter",
+            key: "ScreenMirroring",
+            valueType: .int,
+            isByHost: true,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.controlcenter.siri",
+            category: .menuBar,
+            subcategory: .controlCenter,
+            displayName: "コントロールセンター: Siri",
+            description: "2 または 18 = 表示 / 8 または 24 = 非表示（ByHost）",
+            domain: "com.apple.controlcenter",
+            key: "Siri",
+            valueType: .int,
+            isByHost: true,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.controlcenter.spotlight",
+            category: .menuBar,
+            subcategory: .controlCenter,
+            displayName: "コントロールセンター: Spotlight",
+            description: "2 または 18 = 表示 / 8 または 24 = 非表示（ByHost）",
+            domain: "com.apple.controlcenter",
+            key: "Spotlight",
+            valueType: .int,
+            isByHost: true,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.controlcenter.userSwitcher",
+            category: .menuBar,
+            subcategory: .controlCenter,
+            displayName: "コントロールセンター: ファストユーザスイッチ",
+            description: "2 または 18 = 表示 / 8 または 24 = 非表示（ByHost）",
+            domain: "com.apple.controlcenter",
+            key: "UserSwitcher",
+            valueType: .int,
+            isByHost: true,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+
+        // MARK: メニューバー表示フラグ（通常ドメイン com.apple.controlcenter: macOS 26 Tahoe 等対応）
+        SettingDescriptor(
+            id: "menubar.statusitem.visible.wifi",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示: Wi-Fi",
+            description: "メニューバーに Wi-Fi アイコンを表示する（NSStatusItem Visible WiFi）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem Visible WiFi",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visible.bluetooth",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示: Bluetooth",
+            description: "メニューバーに Bluetooth アイコンを表示する（NSStatusItem Visible Bluetooth）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem Visible Bluetooth",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visible.sound",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示: サウンド",
+            description: "メニューバーにサウンドアイコンを表示する（NSStatusItem Visible Sound）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem Visible Sound",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visible.battery",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示: バッテリー",
+            description: "メニューバーにバッテリーアイコンを表示する（NSStatusItem Visible Battery）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem Visible Battery",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visible.display",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示: ディスプレイ",
+            description: "メニューバーにディスプレイアイコンを表示する（NSStatusItem Visible Display）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem Visible Display",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visible.focusModes",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示: 集中モード",
+            description: "メニューバーに集中モードアイコンを表示する（NSStatusItem Visible FocusModes）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem Visible FocusModes",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visible.nowPlaying",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示: 再生中",
+            description: "メニューバーに再生中アイコンを表示する（NSStatusItem Visible NowPlaying）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem Visible NowPlaying",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visible.screenMirroring",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示: 画面ミラーリング",
+            description: "メニューバーに画面ミラーリングアイコンを表示する（NSStatusItem Visible ScreenMirroring）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem Visible ScreenMirroring",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visible.bentoBox",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示: コントロールセンター本体",
+            description: "メニューバーにコントロールセンターアイコンを表示する（NSStatusItem Visible BentoBox）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem Visible BentoBox",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visibleCC.battery",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示 (CC): バッテリー",
+            description: "コントロールセンター管理のバッテリー表示フラグ（NSStatusItem VisibleCC Battery）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem VisibleCC Battery",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visibleCC.display",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示 (CC): ディスプレイ",
+            description: "コントロールセンター管理のディスプレイ表示フラグ（NSStatusItem VisibleCC Display）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem VisibleCC Display",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visibleCC.clock",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示 (CC): 時計",
+            description: "コントロールセンター管理の時計表示フラグ（NSStatusItem VisibleCC Clock）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem VisibleCC Clock",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visibleCC.wifi",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示 (CC): Wi-Fi",
+            description: "コントロールセンター管理の Wi-Fi 表示フラグ（NSStatusItem VisibleCC WiFi）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem VisibleCC WiFi",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visibleCC.bluetooth",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示 (CC): Bluetooth",
+            description: "コントロールセンター管理の Bluetooth 表示フラグ（NSStatusItem VisibleCC Bluetooth）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem VisibleCC Bluetooth",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visibleCC.sound",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示 (CC): サウンド",
+            description: "コントロールセンター管理のサウンド表示フラグ（NSStatusItem VisibleCC Sound）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem VisibleCC Sound",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.statusitem.visibleCC.bentoBox0",
+            category: .menuBar,
+            subcategory: .menuBarVisibility,
+            displayName: "メニューバー表示 (CC): コントロールセンター (BentoBox-0)",
+            description: "コントロールセンター管理の BentoBox-0 表示フラグ（NSStatusItem VisibleCC BentoBox-0）",
+            domain: "com.apple.controlcenter",
+            key: "NSStatusItem VisibleCC BentoBox-0",
+            valueType: .bool,
+            isByHost: false,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+
+        // MARK: メニューバー時計（com.apple.menuextra.clock）
         SettingDescriptor(
             id: "menubar.clock.showDayOfWeek",
             category: .menuBar,
@@ -580,6 +943,17 @@ public enum SettingCatalog {
             domain: "com.apple.menuextra.clock",
             key: "ShowDayOfWeek",
             valueType: .bool,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.clock.showDate",
+            category: .menuBar,
+            subcategory: .clock,
+            displayName: "時計: 日付を表示",
+            description: "0 = 常に表示 / 1 = スペースがある場合 / 2 = 表示しない",
+            domain: "com.apple.menuextra.clock",
+            key: "ShowDate",
+            valueType: .int,
             restartTargets: [.controlCenter, .systemUIServer]
         ),
         SettingDescriptor(
@@ -601,6 +975,28 @@ public enum SettingCatalog {
             description: "メニューバーの時計を 24 時間表記にする",
             domain: "com.apple.menuextra.clock",
             key: "Show24Hour",
+            valueType: .bool,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.clock.showAMPM",
+            category: .menuBar,
+            subcategory: .clock,
+            displayName: "時計: 午前/午後（AM/PM）を表示",
+            description: "12 時間表記時に午前/午後を表示する",
+            domain: "com.apple.menuextra.clock",
+            key: "ShowAMPM",
+            valueType: .bool,
+            restartTargets: [.controlCenter, .systemUIServer]
+        ),
+        SettingDescriptor(
+            id: "menubar.clock.isAnalog",
+            category: .menuBar,
+            subcategory: .clock,
+            displayName: "時計: アナログ表示",
+            description: "メニューバーの時計をアナログ時計で表示する",
+            domain: "com.apple.menuextra.clock",
+            key: "IsAnalog",
             valueType: .bool,
             restartTargets: [.controlCenter, .systemUIServer]
         )

@@ -20,10 +20,21 @@ struct SnapshotExporterTests {
         commandRunner.setDefaults(domain: "com.apple.finder", key: "ShowPathbar", value: "1")
         commandRunner.setDefaults(domain: "NSGlobalDomain", key: "KeyRepeat", value: "2")
 
-        // 2. メニューバーコントロール（com.apple.controlcenter は必ず -currentHost）
+        // 2. メニューバーコントロール（ByHost と通常ドメイン NSStatusItem Visible* の両対応）
         commandRunner.setDefaults(domain: "com.apple.controlcenter", key: "BatteryShowPercentage", value: "1", isByHost: true)
         commandRunner.setDefaults(domain: "com.apple.controlcenter", key: "WiFi", value: "18", isByHost: true)
+        commandRunner.setDefaults(domain: "com.apple.controlcenter", key: "NSStatusItem VisibleCC Battery", value: "1", isByHost: false)
+        commandRunner.setDefaults(domain: "com.apple.controlcenter", key: "NSStatusItem Visible WiFi", value: "0", isByHost: false)
         commandRunner.setDefaults(domain: "com.apple.menuextra.clock", key: "ShowSeconds", value: "1", isByHost: false)
+        commandRunner.setDefaults(domain: "com.apple.menuextra.clock", key: "ShowDate", value: "0", isByHost: false)
+
+        // 2-b. 通常ドメイン com.apple.controlcenter.plist の動的 NSStatusItem Visible* キー
+        try plistStore.setPlist([
+            "NSStatusItem VisibleCC Battery": true, // 固定カタログ済みのため動的キーとしては重複追加されない
+            "NSStatusItem Visible Shortcuts": false,
+            "NSStatusItem Visible Item-0": true,
+            "UnrelatedKey": "ignored"
+        ], at: plistStore.preferencesDirectory.appendingPathComponent("com.apple.controlcenter.plist"))
 
         // 3. システム標準ショートカット
         let hotKeysURL = plistStore.preferencesDirectory.appendingPathComponent("com.apple.symbolichotkeys.plist")
@@ -75,14 +86,33 @@ struct SnapshotExporterTests {
         #expect(report.snapshot.systemDefaults.keys.contains("dock.magnification"))
         #expect(report.snapshot.systemDefaults["dock.magnification"]?.value == nil)
 
-        // ControlCenter が -currentHost 付きで読み取られていること
+        // ControlCenter の ByHost 項目は -currentHost 付き、NSStatusItem Visible* 項目は通常ドメインで読み取られていること
         #expect(report.snapshot.menuBar["menubar.controlcenter.batteryShowPercentage"]?.value == .bool(true))
         #expect(report.snapshot.menuBar["menubar.controlcenter.wifi"]?.value == .int(18))
+        #expect(report.snapshot.menuBar["menubar.statusitem.visibleCC.battery"]?.value == .bool(true))
+        #expect(report.snapshot.menuBar["menubar.statusitem.visible.wifi"]?.value == .bool(false))
         #expect(report.snapshot.menuBar["menubar.clock.showSeconds"]?.value == .bool(true))
-        let ccInvocations = commandRunner.recordedInvocations().filter { $0.arguments.contains("com.apple.controlcenter") }
-        #expect(!ccInvocations.isEmpty)
-        let allByHost = ccInvocations.allSatisfy { $0.arguments.first == "-currentHost" }
-        #expect(allByHost)
+        #expect(report.snapshot.menuBar["menubar.clock.showDate"]?.value == .int(0))
+
+        // 動的検出されたステータス項目が格納され、固定カタログ項目は重複しないこと
+        let shortcutsID = SettingCatalog.dynamicMenuBarStatusItemID(forKey: "NSStatusItem Visible Shortcuts")
+        let item0ID = SettingCatalog.dynamicMenuBarStatusItemID(forKey: "NSStatusItem Visible Item-0")
+        let duplicateBatteryID = SettingCatalog.dynamicMenuBarStatusItemID(forKey: "NSStatusItem VisibleCC Battery")
+        #expect(report.snapshot.menuBar[shortcutsID]?.value == .bool(false))
+        #expect(report.snapshot.menuBar[item0ID]?.value == .bool(true))
+        #expect(report.snapshot.menuBar[duplicateBatteryID] == nil)
+
+        let wifiByHostInvocations = commandRunner.recordedInvocations().filter {
+            $0.arguments.contains("com.apple.controlcenter") && $0.arguments.contains("WiFi")
+        }
+        #expect(wifiByHostInvocations.count == 1)
+        #expect(wifiByHostInvocations.first?.arguments.first == "-currentHost")
+
+        let visibleCCBatteryInvocations = commandRunner.recordedInvocations().filter {
+            $0.arguments.contains("com.apple.controlcenter") && $0.arguments.contains("NSStatusItem VisibleCC Battery")
+        }
+        #expect(visibleCCBatteryInvocations.count == 1)
+        #expect(visibleCCBatteryInvocations.first?.arguments.first != "-currentHost")
 
         // 標準ショートカット
         #expect(

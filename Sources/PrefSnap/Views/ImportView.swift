@@ -8,30 +8,41 @@ struct ImportView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
+            VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("差分プレビューと選択適用（Import）")
                         .font(.title2.bold())
                     Text("JSON を読み込むと現在の Mac との差分のみ表示されます。適用直前に自動でバックアップを作成します。")
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer()
-                Button {
-                    viewModel.selectAndLoadImportFile()
-                } label: {
-                    Label("JSON ファイルを開く…", systemImage: "folder")
-                }
-                .disabled(viewModel.isBusy)
 
-                Button {
-                    viewModel.applySelectedDiffs()
-                } label: {
-                    Label("選択した \(viewModel.selectedApplicableDiffCount) 件を適用", systemImage: "checkmark.circle.fill")
+                // タイトル・説明文の下に改行を設け、操作ボタン群を中央揃えで配置する
+                HStack(spacing: 12) {
+                    Button {
+                        viewModel.selectAndLoadImportFile()
+                    } label: {
+                        Label("JSON ファイルを開く…", systemImage: "folder")
+                    }
+                    .controlSize(.large)
+                    .fixedSize()
+                    .disabled(viewModel.isBusy)
+
+                    Button {
+                        viewModel.applySelectedDiffs()
+                    } label: {
+                        Label("選択した \(viewModel.selectedApplicableDiffCount) 件を適用", systemImage: "checkmark.circle.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .fixedSize()
+                    .disabled(viewModel.selectedApplicableDiffCount == 0 || viewModel.isBusy)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(viewModel.selectedApplicableDiffCount == 0 || viewModel.isBusy)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
+
+            Divider()
 
             if let result = viewModel.lastApplyResult {
                 applyResultCard(result)

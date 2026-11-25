@@ -7,7 +7,7 @@ macOS のシステム設定・メニューバー設定・キーボードショ�
 - **SwiftPM（`Package.swift`）単体構成**: Xcode プロジェクトファイルなしで、コマンドラインからビルド・テスト・起動が完結します（macOS 14.0 Sonoma 以降 / App Sandbox 無効）。
 - **5 カテゴリの設定に対応**:
   1. システム基本設定（Dock / Finder / キーボード・トラックパッド / スクリーンショット、計 34 項目）
-  2. メニューバーコントロール（`com.apple.controlcenter` は `-currentHost` / `ByHost` 対象、`com.apple.menuextra.clock`、計 8 項目）
+  2. メニューバーコントロール（`com.apple.controlcenter` の `-currentHost` / `ByHost` 項目および通常ドメインの `NSStatusItem Visible*` / `VisibleCC *` 固定＋動的キー、`com.apple.menuextra.clock` に対応）
   3. システム標準ショートカット（`com.apple.symbolichotkeys` の主要 12 項目を安全にマージ更新）
   4. アプリケーションショートカット（`NSUserKeyEquivalents` と `com.apple.universalaccess` の `com.apple.custommenu.apps` を整合更新）
   5. 修飾キーのリマップ（`ByHost/.GlobalPreferences` ＋ `IOKit` / `IOHIDManager` によるデバイス名・内蔵/外付け判定）

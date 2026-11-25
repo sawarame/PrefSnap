@@ -124,4 +124,52 @@ struct SnapshotDiffEngineTests {
         #expect(disconnected.willApply == false)
         #expect(disconnected.detail.contains("未接続のためスキップ"))
     }
+
+    @Test("メニューバー表示（NSStatusItem Visible* / 動的キー）およびコントロールセンター値ラベルの差分検出")
+    func menuBarVisibilityAndDynamicKeysProduceReadableDiffs() throws {
+        let dynamicID = SettingCatalog.dynamicMenuBarStatusItemID(forKey: "NSStatusItem Visible Shortcuts")
+
+        let current = PrefSnapSnapshot(
+            exportedAt: "2026-11-25T12:00:00Z",
+            sourceHost: host,
+            systemDefaults: [:],
+            menuBar: [
+                "menubar.controlcenter.wifi": NullableValue(.int(8)),
+                "menubar.statusitem.visibleCC.battery": NullableValue(.bool(false)),
+                dynamicID: NullableValue(.bool(false))
+            ],
+            symbolicHotKeys: [:],
+            appShortcuts: [:],
+            modifierMappings: []
+        )
+
+        let target = PrefSnapSnapshot(
+            exportedAt: "2026-11-25T12:05:00Z",
+            sourceHost: host,
+            systemDefaults: [:],
+            menuBar: [
+                "menubar.controlcenter.wifi": NullableValue(.int(18)),
+                "menubar.statusitem.visibleCC.battery": NullableValue(.bool(true)),
+                dynamicID: NullableValue(.bool(true))
+            ],
+            symbolicHotKeys: [:],
+            appShortcuts: [:],
+            modifierMappings: []
+        )
+
+        let engine = SnapshotDiffEngine()
+        let report = engine.computeDiff(current: current, target: target, connectedKeyboards: [])
+
+        #expect(report.items.count == 3)
+        let wifiDiff = try #require(report.items.first { $0.id == "defaults:menubar.controlcenter.wifi" })
+        #expect(wifiDiff.beforeDisplay == "非表示 / アクティブ時のみ (8)")
+        #expect(wifiDiff.afterDisplay == "常に表示 (18)")
+
+        let ccBatteryDiff = try #require(report.items.first { $0.id == "defaults:menubar.statusitem.visibleCC.battery" })
+        #expect(ccBatteryDiff.detail == "com.apple.controlcenter / NSStatusItem VisibleCC Battery")
+
+        let dynamicDiff = try #require(report.items.first { $0.id == "defaults:\(dynamicID)" })
+        #expect(dynamicDiff.title == "メニューバー表示: Shortcuts")
+        #expect(dynamicDiff.restartTargets == [.controlCenter, .systemUIServer])
+    }
 }

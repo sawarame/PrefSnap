@@ -52,6 +52,13 @@ public struct SnapshotExporter: Sendable {
             }
         }
 
+        // 2-b. com.apple.controlcenter.plist に含まれる動的 NSStatusItem Visible* / VisibleCC * キーの読み取り
+        let (dynamicMenuBar, dynamicMenuBarIssues) = readDynamicControlCenterStatusItems()
+        for (id, value) in dynamicMenuBar {
+            menuBar[id] = value
+        }
+        issues.append(contentsOf: dynamicMenuBarIssues)
+
         // 3. システム標準ショートカット（com.apple.symbolichotkeys）
         let (symbolicHotKeys, hotKeyIssues) = readSymbolicHotKeys()
         issues.append(contentsOf: hotKeyIssues)
@@ -138,6 +145,40 @@ public struct SnapshotExporter: Sendable {
             return nil
         case .string:
             return .string(trimmed)
+        }
+    }
+
+    // MARK: - 2-b. 動的メニューバー表示キー（com.apple.controlcenter.plist）
+
+    /// 固定カタログ外の `NSStatusItem Visible ...` / `NSStatusItem VisibleCC ...` キーを自動収集する。
+    /// macOS 26 (Tahoe) 以降で追加される個別コントロールや `Item-N` 系の表示フラグを漏れなく扱うため。
+    private func readDynamicControlCenterStatusItems() -> ([String: NullableValue<DefaultsValue>], [ItemIssue]) {
+        let plistURL = plistStore.preferencesDirectory.appendingPathComponent("com.apple.controlcenter.plist")
+        guard plistStore.fileExists(at: plistURL) else {
+            return ([:], [])
+        }
+
+        do {
+            let dict = try plistStore.readPlistDictionary(at: plistURL)
+            var dynamicItems: [String: NullableValue<DefaultsValue>] = [:]
+            for key in dict.keys.sorted() {
+                guard key.hasPrefix("NSStatusItem Visible ") || key.hasPrefix("NSStatusItem VisibleCC ") else {
+                    continue
+                }
+                guard !SettingCatalog.knownControlCenterNonByHostKeys.contains(key) else {
+                    continue
+                }
+                if let rawValue = dict[key],
+                   let parsed = DefaultsValue.fromPropertyListObject(rawValue, expectedType: .bool) {
+                    let id = SettingCatalog.dynamicMenuBarStatusItemID(forKey: key)
+                    dynamicItems[id] = NullableValue(parsed)
+                }
+            }
+            return (dynamicItems, [])
+        } catch let error as PrefSnapError {
+            return ([:], [makeIssue(from: error, itemTitle: "メニューバー表示設定 (com.apple.controlcenter.plist)")])
+        } catch {
+            return ([:], [ItemIssue(itemTitle: "メニューバー表示設定", message: error.localizedDescription, isPermissionError: false)])
         }
     }
 

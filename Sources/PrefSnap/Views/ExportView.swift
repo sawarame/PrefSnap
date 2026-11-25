@@ -7,30 +7,41 @@ struct ExportView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
+            VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("設定のエクスポート")
                         .font(.title2.bold())
                     Text("現在の Mac から 5 カテゴリの設定を抽出し、Git 管理しやすい整形済み JSON として保存します。")
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer()
-                Button {
-                    viewModel.scanCurrentEnvironment()
-                } label: {
-                    Label("現在の設定を読み取る", systemImage: "arrow.clockwise")
-                }
-                .disabled(viewModel.isBusy)
 
-                Button {
-                    viewModel.saveExportedJSONWithPanel()
-                } label: {
-                    Label("JSON として保存…", systemImage: "square.and.arrow.down")
+                // タイトル・説明文の下に改行を設け、操作ボタン群を中央揃えで配置する
+                HStack(spacing: 12) {
+                    Button {
+                        viewModel.scanCurrentEnvironment()
+                    } label: {
+                        Label("現在の設定を読み取る", systemImage: "arrow.clockwise")
+                    }
+                    .controlSize(.large)
+                    .fixedSize()
+                    .disabled(viewModel.isBusy)
+
+                    Button {
+                        viewModel.saveExportedJSONWithPanel()
+                    } label: {
+                        Label("JSON として保存…", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .fixedSize()
+                    .disabled(viewModel.exportReport == nil || viewModel.isBusy)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(viewModel.exportReport == nil || viewModel.isBusy)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
+
+            Divider()
 
             if let status = viewModel.statusMessage {
                 Text(status)
@@ -70,7 +81,7 @@ struct ExportView: View {
                 ContentUnavailableView(
                     "設定がまだ読み取られていません",
                     systemImage: "doc.text.magnifyingglass",
-                    description: Text("右上の「現在の設定を読み取る」を押すと、この Mac の設定を安全にスキャンします。")
+                    description: Text("上の「現在の設定を読み取る」ボタンを押すと、この Mac の設定を安全にスキャンします。")
                 )
             }
         }
@@ -110,9 +121,29 @@ struct ExportView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text(value?.displayString ?? "未設定 (null)")
+                        Text(descriptor.formatDisplayValue(value))
                             .font(.callout.monospaced())
                             .foregroundStyle(value == nil ? .secondary : .primary)
+                    }
+                }
+                let dynamicKeys = snapshot.menuBar.keys
+                    .filter { $0.hasPrefix(SettingCatalog.dynamicStatusItemIDPrefix) }
+                    .sorted()
+                ForEach(dynamicKeys, id: \.self) { dynamicID in
+                    if let descriptor = SettingCatalog.dynamicMenuBarDescriptor(forID: dynamicID) {
+                        let value = snapshot.menuBar[dynamicID]?.value
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(descriptor.displayName)
+                                Text("\(descriptor.domain) / \(descriptor.key)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(descriptor.formatDisplayValue(value))
+                                .font(.callout.monospaced())
+                                .foregroundStyle(value == nil ? .secondary : .primary)
+                        }
                     }
                 }
             }

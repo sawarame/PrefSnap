@@ -87,13 +87,34 @@ struct SnapshotSerializerTests {
         }
     }
 
-    @Test("MVP プリセットカタログ件数と ControlCenter の ByHost 指定")
+    @Test("プリセットカタログ件数と ControlCenter（ByHost／通常ドメイン）の分類")
     func catalogContainsExpectedNumberOfMVPItems() {
-        #expect(SettingCatalog.defaultsItems.count >= 30)
-        #expect(SettingCatalog.defaultsItems.count <= 50)
-        let controlCenterItems = SettingCatalog.defaultsItems.filter { $0.domain == "com.apple.controlcenter" }
-        #expect(!controlCenterItems.isEmpty)
-        let allControlCenterByHost = controlCenterItems.allSatisfy(\.isByHost)
-        #expect(allControlCenterByHost)
+        #expect(SettingCatalog.defaultsItems.count >= 60)
+
+        let byHostCC = SettingCatalog.defaultsItems.filter {
+            $0.domain == "com.apple.controlcenter" && $0.subcategory == .controlCenter
+        }
+        #expect(byHostCC.count == 12)
+        let allByHostCC = byHostCC.allSatisfy(\.isByHost)
+        #expect(allByHostCC)
+
+        let statusItemCC = SettingCatalog.defaultsItems.filter {
+            $0.domain == "com.apple.controlcenter" && $0.subcategory == .menuBarVisibility
+        }
+        #expect(statusItemCC.count == 16)
+        let allStatusItemsNonByHost = statusItemCC.allSatisfy { !$0.isByHost }
+        #expect(allStatusItemsNonByHost)
+
+        let clockItems = SettingCatalog.defaultsItems.filter {
+            $0.domain == "com.apple.menuextra.clock"
+        }
+        #expect(clockItems.count == 6)
+
+        // 動的メニューバー表示キーから SettingDescriptor を復元できること
+        let dynamicID = SettingCatalog.dynamicMenuBarStatusItemID(forKey: "NSStatusItem Visible Shortcuts")
+        let dynamicDescriptor = SettingCatalog.dynamicMenuBarDescriptor(forID: dynamicID)
+        #expect(dynamicDescriptor?.domain == "com.apple.controlcenter")
+        #expect(dynamicDescriptor?.key == "NSStatusItem Visible Shortcuts")
+        #expect(dynamicDescriptor?.isByHost == false)
     }
 }

@@ -36,8 +36,39 @@ public struct SnapshotDiffEngine: Sendable {
                     subcategoryLabel: descriptor.subcategory.rawValue,
                     title: descriptor.displayName,
                     detail: "\(descriptor.domain) / \(descriptor.key)\(descriptor.isByHost ? " (ByHost)" : "")",
-                    beforeDisplay: currentVal?.displayString ?? "未設定（初期値）",
-                    afterDisplay: targetVal?.displayString ?? "未設定へ戻す（削除）",
+                    beforeDisplay: descriptor.formatDisplayValue(currentVal, nilLabel: "未設定（初期値）"),
+                    afterDisplay: descriptor.formatDisplayValue(targetVal, nilLabel: "未設定へ戻す（削除）"),
+                    action: .defaultsSetting(descriptor: descriptor, newValue: targetVal),
+                    restartTargets: descriptor.restartTargets,
+                    requiresRelogin: descriptor.requiresRelogin,
+                    isSelected: true
+                )
+            )
+        }
+
+        // 1-b. 動的検出されたメニューバー表示項目（menubar.statusitem.dynamic.*）
+        let dynamicMenuBarIDs = target.menuBar.keys
+            .filter { $0.hasPrefix(SettingCatalog.dynamicStatusItemIDPrefix) }
+            .sorted()
+        for dynamicID in dynamicMenuBarIDs {
+            guard let descriptor = SettingCatalog.dynamicMenuBarDescriptor(forID: dynamicID),
+                  let targetWrapped = target.menuBar[dynamicID]
+            else {
+                continue
+            }
+            let currentVal = current.menuBar[dynamicID]?.value
+            let targetVal = targetWrapped.value
+            guard currentVal != targetVal else { continue }
+
+            items.append(
+                DiffItem(
+                    id: "defaults:\(descriptor.id)",
+                    category: descriptor.category,
+                    subcategoryLabel: descriptor.subcategory.rawValue,
+                    title: descriptor.displayName,
+                    detail: "\(descriptor.domain) / \(descriptor.key)",
+                    beforeDisplay: descriptor.formatDisplayValue(currentVal, nilLabel: "未設定（初期値）"),
+                    afterDisplay: descriptor.formatDisplayValue(targetVal, nilLabel: "未設定へ戻す（削除）"),
                     action: .defaultsSetting(descriptor: descriptor, newValue: targetVal),
                     restartTargets: descriptor.restartTargets,
                     requiresRelogin: descriptor.requiresRelogin,

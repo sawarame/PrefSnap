@@ -328,4 +328,82 @@ struct SnapshotApplierAndRollbackTests {
         #expect(hasPermissionError)
         #expect(commandRunner.storedDefaults(domain: "com.apple.dock", key: "autohide") == nil)
     }
+
+    @Test("通常ドメイン com.apple.controlcenter の NSStatusItem Visible* および動的キーが安全に適用・ロールバックされること")
+    func menuBarStatusItemVisibilityAppliesWithoutCurrentHostAndRestartsControlCenter() throws {
+        let commandRunner = MockCommandRunner()
+        let plistStore = MockPlistStore()
+        let keyboardDetector = MockKeyboardDetector()
+        let fileStore = MockFileStore()
+        let processController = MockProcessController()
+        let environment = MockEnvironmentProvider()
+
+        commandRunner.setDefaults(domain: "com.apple.controlcenter", key: "NSStatusItem VisibleCC Display", value: "0", isByHost: false)
+        try plistStore.setPlist([
+            "NSStatusItem Visible Shortcuts": false
+        ], at: plistStore.preferencesDirectory.appendingPathComponent("com.apple.controlcenter.plist"))
+
+        let exporter = SnapshotExporter(
+            commandRunner: commandRunner,
+            plistStore: plistStore,
+            keyboardDetector: keyboardDetector,
+            environment: environment
+        )
+        let backupManager = BackupManager(fileStore: fileStore, environment: environment)
+        let applier = SnapshotApplier(
+            commandRunner: commandRunner,
+            plistStore: plistStore,
+            keyboardDetector: keyboardDetector,
+            processController: processController,
+            backupManager: backupManager,
+            exporter: exporter
+        )
+
+        let visibleCCDisplay = try #require(SettingCatalog.defaultsItemsByID["menubar.statusitem.visibleCC.display"])
+        let dynamicID = SettingCatalog.dynamicMenuBarStatusItemID(forKey: "NSStatusItem Visible Shortcuts")
+        let dynamicDescriptor = try #require(SettingCatalog.dynamicMenuBarDescriptor(forID: dynamicID))
+
+        let items: [DiffItem] = [
+            DiffItem(
+                id: "defaults:\(visibleCCDisplay.id)",
+                category: .menuBar,
+                subcategoryLabel: visibleCCDisplay.subcategory.rawValue,
+                title: visibleCCDisplay.displayName,
+                detail: "",
+                beforeDisplay: "オフ (false)",
+                afterDisplay: "オン (true)",
+                action: .defaultsSetting(descriptor: visibleCCDisplay, newValue: .bool(true)),
+                restartTargets: visibleCCDisplay.restartTargets,
+                requiresRelogin: false,
+                isSelected: true
+            ),
+            DiffItem(
+                id: "defaults:\(dynamicDescriptor.id)",
+                category: .menuBar,
+                subcategoryLabel: dynamicDescriptor.subcategory.rawValue,
+                title: dynamicDescriptor.displayName,
+                detail: "",
+                beforeDisplay: "オフ (false)",
+                afterDisplay: "オン (true)",
+                action: .defaultsSetting(descriptor: dynamicDescriptor, newValue: .bool(true)),
+                restartTargets: dynamicDescriptor.restartTargets,
+                requiresRelogin: false,
+                isSelected: true
+            )
+        ]
+
+        let result = applier.apply(items: items, createBackupBeforeApply: true)
+        #expect(result.issues.isEmpty)
+        #expect(result.appliedCount == 2)
+        #expect(Set(result.restartedProcesses) == [.controlCenter, .systemUIServer])
+        #expect(commandRunner.storedDefaults(domain: "com.apple.controlcenter", key: "NSStatusItem VisibleCC Display", isByHost: false) == "1")
+        #expect(commandRunner.storedDefaults(domain: "com.apple.controlcenter", key: "NSStatusItem Visible Shortcuts", isByHost: false) == "1")
+
+        // 書き込み時に -currentHost が付いていないこと（通常ドメインへの適用）
+        let writeDisplayInvocations = commandRunner.recordedInvocations().filter {
+            $0.arguments.contains("write") && $0.arguments.contains("NSStatusItem VisibleCC Display")
+        }
+        #expect(writeDisplayInvocations.count == 1)
+        #expect(writeDisplayInvocations.first?.arguments.first != "-currentHost")
+    }
 }
