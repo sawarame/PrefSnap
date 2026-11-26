@@ -2,112 +2,30 @@
   <defs>
     <!-- macOS 標準アイコン相当のソフトなドロップシャドウ -->
     <filter id="appShadow" x="40" y="48" width="944" height="944" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#050A1B" flood-opacity="0.34"/>
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#0A193D" flood-opacity="0.28"/>
     </filter>
 
-    <!-- 撮影フレーム・スライダー用の繊細なドロップシャドウ -->
-    <filter id="elementShadow" x="160" y="160" width="704" height="704" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#081338" flood-opacity="0.36"/>
-    </filter>
-
-    <!-- スライダーノブ用の立体シャドウ -->
+    <!-- スライダーノブ用の控えめな輪郭シャドウ -->
     <filter id="knobShadow" x="300" y="300" width="440" height="440" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#061030" flood-opacity="0.42"/>
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#0D235C" flood-opacity="0.26"/>
     </filter>
 
     <!-- DEV バッジ用のドロップシャドウ -->
     <filter id="devBadgeShadow" x="480" y="650" width="520" height="310" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#1E0A00" flood-opacity="0.46"/>
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#1E0A00" flood-opacity="0.34"/>
     </filter>
-
-    <!-- 背景メイングラデーション（ディープブルー〜インディゴ基調） -->
-    <linearGradient id="bgMain" x1="120" y1="100" x2="904" y2="924" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#3B82F6"/>
-      <stop offset="48%" stop-color="#244AD4"/>
-      <stop offset="100%" stop-color="#1A1B59"/>
-    </linearGradient>
-
-    <!-- 左上からの柔らかなハイライト光 -->
-    <radialGradient id="bgTopGlow" cx="28%" cy="20%" r="65%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#93C5FD" stop-opacity="0.34"/>
-      <stop offset="55%" stop-color="#60A5FA" stop-opacity="0.08"/>
-      <stop offset="100%" stop-color="#60A5FA" stop-opacity="0"/>
-    </radialGradient>
-
-    <!-- 右下からのシアン環境光 -->
-    <radialGradient id="bgBottomGlow" cx="82%" cy="84%" r="55%" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.24"/>
-      <stop offset="100%" stop-color="#22D3EE" stop-opacity="0"/>
-    </radialGradient>
-
-    <!-- 本体外周のガラス調インナーハイライト枠 -->
-    <linearGradient id="borderHighlight" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.42"/>
-      <stop offset="45%" stop-color="#BFDBFE" stop-opacity="0.14"/>
-      <stop offset="100%" stop-color="#0F172A" stop-opacity="0.32"/>
-    </linearGradient>
-
-    <!-- 内側スナップショットカードのガラス調塗り -->
-    <linearGradient id="cardGlass" x1="264" y1="264" x2="760" y2="760" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.14"/>
-      <stop offset="100%" stop-color="#93C5FD" stop-opacity="0.05"/>
-    </linearGradient>
-
-    <!-- 四隅の撮影フレーム（カメラファインダー）グラデーション -->
-    <linearGradient id="frameGrad" x1="224" y1="224" x2="800" y2="800" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#F0F9FF"/>
-      <stop offset="50%" stop-color="#BAE6FD"/>
-      <stop offset="100%" stop-color="#38BDF8"/>
-    </linearGradient>
-
-    <!-- スライダーのアクティブ部分（シアン〜スカイブルー） -->
-    <linearGradient id="sliderActive1" x1="316" y1="392" x2="480" y2="392" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#60A5FA"/>
-      <stop offset="100%" stop-color="#38BDF8"/>
-    </linearGradient>
-    <linearGradient id="sliderActive2" x1="316" y1="512" x2="640" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#38BDF8"/>
-      <stop offset="100%" stop-color="#22D3EE"/>
-    </linearGradient>
-    <linearGradient id="sliderActive3" x1="316" y1="632" x2="520" y2="632" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#818CF8"/>
-      <stop offset="100%" stop-color="#38BDF8"/>
-    </linearGradient>
-
-    <!-- スライダーのツマミ（ノブ）グラデーション -->
-    <linearGradient id="knobGrad" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#FFFFFF"/>
-      <stop offset="100%" stop-color="#DCEBFF"/>
-    </linearGradient>
-
-    <!-- DEV バッジ用オレンジ／アンバー系グラデーション -->
-    <linearGradient id="devBadgeBg" x1="544" y1="696" x2="948" y2="884" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#FBBF24"/>
-      <stop offset="48%" stop-color="#F97316"/>
-      <stop offset="100%" stop-color="#EA580C"/>
-    </linearGradient>
-
-    <!-- 本体クリップ領域 -->
-    <clipPath id="squircleClip">
-      <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
-    </clipPath>
   </defs>
 
-  <!-- 本体ベース（macOS Squircle 824x824 + ドロップシャドウ） -->
+  <!-- 本体ベース（macOS Squircle 824x824、クリアブルー単色） -->
   <g filter="url(#appShadow)">
-    <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#bgMain)"/>
-    <g clip-path="url(#squircleClip)">
-      <rect x="100" y="100" width="824" height="824" fill="url(#bgTopGlow)"/>
-      <rect x="100" y="100" width="824" height="824" fill="url(#bgBottomGlow)"/>
-    </g>
-    <rect x="102" y="102" width="820" height="820" rx="183" ry="183" stroke="url(#borderHighlight)" stroke-width="4"/>
+    <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="#2563EB"/>
   </g>
 
-  <!-- 設定スナップショットを表すガラス調内側パネル -->
-  <rect x="260" y="260" width="504" height="504" rx="88" ry="88" fill="url(#cardGlass)" stroke="#E0F2FE" stroke-opacity="0.22" stroke-width="3"/>
+  <!-- 設定スナップショットを表す控えめな内側パネル（単色フラット） -->
+  <rect x="260" y="260" width="504" height="504" rx="84" ry="84" fill="#1D51CE"/>
 
-  <!-- 四隅の撮影フレーム（カメラファインダー） -->
-  <g filter="url(#elementShadow)" stroke="url(#frameGrad)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none">
+  <!-- 四隅の撮影フレーム（カメラファインダー、純白単色） -->
+  <g stroke="#FFFFFF" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none">
     <!-- 左上 -->
     <path d="M224 334 L224 274 Q224 224 274 224 L334 224"/>
     <!-- 右上 -->
@@ -118,43 +36,35 @@
     <path d="M690 800 L750 800 Q800 800 800 750 L800 690"/>
   </g>
 
-  <!-- スナップショットの閃光を象徴する右上の小さなスパークル -->
-  <path d="M726 270 C729 292 732 295 754 298 C732 301 729 304 726 326 C723 304 720 301 698 298 C720 295 723 292 726 270 Z" fill="#E0F7FF" fill-opacity="0.92"/>
-
-  <!-- 中央の3段設定スライダー -->
-  <g filter="url(#elementShadow)">
+  <!-- 中央の3段設定スライダー（未選択: ネイビー単色、選択部: スカイブルー単色） -->
+  <g>
     <!-- 上段スライダー -->
-    <rect x="316" y="370" width="392" height="44" rx="22" fill="#0B153C" fill-opacity="0.48" stroke="#93C5FD" stroke-opacity="0.18" stroke-width="2"/>
-    <rect x="316" y="370" width="144" height="44" rx="22" fill="url(#sliderActive1)"/>
+    <rect x="316" y="370" width="392" height="44" rx="22" fill="#14358A"/>
+    <rect x="316" y="370" width="144" height="44" rx="22" fill="#38BDF8"/>
 
     <!-- 中段スライダー -->
-    <rect x="316" y="490" width="392" height="44" rx="22" fill="#0B153C" fill-opacity="0.48" stroke="#93C5FD" stroke-opacity="0.18" stroke-width="2"/>
-    <rect x="316" y="490" width="302" height="44" rx="22" fill="url(#sliderActive2)"/>
+    <rect x="316" y="490" width="392" height="44" rx="22" fill="#14358A"/>
+    <rect x="316" y="490" width="302" height="44" rx="22" fill="#38BDF8"/>
 
     <!-- 下段スライダー -->
-    <rect x="316" y="610" width="392" height="44" rx="22" fill="#0B153C" fill-opacity="0.48" stroke="#93C5FD" stroke-opacity="0.18" stroke-width="2"/>
-    <rect x="316" y="610" width="188" height="44" rx="22" fill="url(#sliderActive3)"/>
+    <rect x="316" y="610" width="392" height="44" rx="22" fill="#14358A"/>
+    <rect x="316" y="610" width="188" height="44" rx="22" fill="#38BDF8"/>
   </g>
 
-  <!-- スライダーの白いノブ（ツマミ） -->
+  <!-- スライダーの白いノブ（純白単色） -->
   <g filter="url(#knobShadow)">
     <!-- 上段ノブ（左寄り） -->
-    <circle cx="440" cy="392" r="42" fill="url(#knobGrad)"/>
-    <circle cx="440" cy="392" r="40.5" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="3"/>
-
+    <circle cx="440" cy="392" r="42" fill="#FFFFFF"/>
     <!-- 中段ノブ（右寄り） -->
-    <circle cx="598" cy="512" r="42" fill="url(#knobGrad)"/>
-    <circle cx="598" cy="512" r="40.5" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="3"/>
-
+    <circle cx="598" cy="512" r="42" fill="#FFFFFF"/>
     <!-- 下段ノブ（中央寄り） -->
-    <circle cx="484" cy="632" r="42" fill="url(#knobGrad)"/>
-    <circle cx="484" cy="632" r="40.5" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="3"/>
+    <circle cx="484" cy="632" r="42" fill="#FFFFFF"/>
   </g>
 
-  <!-- 開発版（DEV）バッジ：フォント非依存のベクターパスでどの環境でも同一描画を保証 -->
+  <!-- 開発版（DEV）バッジ（オレンジ単色＋純白ベクター文字） -->
   <g filter="url(#devBadgeShadow)">
-    <rect x="540" y="698" width="408" height="184" rx="58" ry="58" fill="url(#devBadgeBg)"/>
-    <rect x="544" y="702" width="400" height="176" rx="54" ry="54" stroke="#FEF3C7" stroke-opacity="0.72" stroke-width="6"/>
+    <rect x="540" y="698" width="408" height="184" rx="58" ry="58" fill="#F97316"/>
+    <rect x="544" y="702" width="400" height="176" rx="54" ry="54" stroke="#FFFFFF" stroke-opacity="0.88" stroke-width="6"/>
 
     <!-- 「DEV」文字（ベクターパス、高さ 96px・太字丸ゴシック調） -->
     <g stroke="#FFFFFF" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none">
