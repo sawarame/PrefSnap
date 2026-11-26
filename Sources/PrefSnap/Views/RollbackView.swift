@@ -26,6 +26,13 @@ struct RollbackView: View {
                     .textSelection(.enabled)
                     .multilineTextAlignment(.center)
 
+                if let status = viewModel.statusMessage {
+                    Text(status)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
                 HStack(spacing: 12) {
                     Button {
                         viewModel.refreshBackups()
@@ -93,27 +100,44 @@ struct RollbackView: View {
                             }
                         }
                     )) { record in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 6) {
-                                Text(Self.dateFormatter.string(from: record.createdAt))
-                                    .font(.headline)
-                                if record.id == viewModel.backups.first?.id {
-                                    Text("直前")
+                        HStack(alignment: .center, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Text(Self.dateFormatter.string(from: record.createdAt))
+                                        .font(.headline)
+                                    if record.id == viewModel.backups.first?.id {
+                                        Text("直前")
+                                            .font(.caption2)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.accentColor.opacity(0.15))
+                                            .clipShape(Capsule())
+                                    }
+                                }
+                                Text(record.fileName)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                if let host = record.hostName {
+                                    Text("ホスト: \(host)")
                                         .font(.caption2)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.accentColor.opacity(0.15))
-                                        .clipShape(Capsule())
+                                        .foregroundStyle(.secondary)
                                 }
                             }
-                            Text(record.fileName)
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
-                            if let host = record.hostName {
-                                Text("ホスト: \(host)")
-                                    .font(.caption2)
+
+                            Spacer(minLength: 4)
+
+                            // 行選択との誤操作を避けるため、右端に独立したゴミ箱ボタンを配置する
+                            Button(role: .destructive) {
+                                viewModel.pendingDeleteBackup = record
+                            } label: {
+                                Image(systemName: "trash")
                                     .foregroundStyle(.secondary)
+                                    .padding(4)
                             }
+                            .buttonStyle(.borderless)
+                            .disabled(viewModel.isBusy)
+                            .accessibilityLabel("バックアップ「\(record.fileName)」を削除")
+                            .help("このバックアップをゴミ箱へ移動")
                         }
                         .padding(.vertical, 4)
                         .tag(record.id)
@@ -157,6 +181,35 @@ struct RollbackView: View {
         .padding(20)
         .onAppear {
             viewModel.refreshBackups()
+        }
+        .alert(
+            "バックアップ履歴をゴミ箱へ移動しますか？",
+            isPresented: Binding(
+                get: { viewModel.pendingDeleteBackup != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        viewModel.pendingDeleteBackup = nil
+                    }
+                }
+            ),
+            presenting: viewModel.pendingDeleteBackup
+        ) { record in
+            Button("ゴミ箱へ移動", role: .destructive) {
+                viewModel.pendingDeleteBackup = nil
+                viewModel.deleteBackup(record)
+            }
+            Button("キャンセル", role: .cancel) {
+                viewModel.pendingDeleteBackup = nil
+            }
+        } message: { record in
+            Text(
+                """
+                日時: \(Self.dateFormatter.string(from: record.createdAt))
+                ファイル名: \(record.fileName)
+
+                このバックアップファイルを macOS のゴミ箱へ移動します。必要であればゴミ箱から元に戻せます。
+                """
+            )
         }
     }
 }

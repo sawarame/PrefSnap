@@ -265,7 +265,9 @@ final class MockFileStore: FileStoring, @unchecked Sendable {
     let backupDirectory: URL
     private let lock = NSLock()
     private var files: [URL: (data: Data, modifiedAt: Date)] = [:]
+    private var trashedURLs: [URL] = []
     var failWriteWithPermissionError = false
+    var failTrashWithPermissionError = false
 
     init() {
         self.backupDirectory = URL(fileURLWithPath: "/mock/Application Support/PrefSnap/Backups", isDirectory: true)
@@ -318,6 +320,35 @@ final class MockFileStore: FileStoring, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return files[normalized]?.modifiedAt
+    }
+
+    /// 指定されたファイルをメモリ上から削除し、ゴミ箱移動履歴へ記録する。
+    /// - Parameter url: ゴミ箱へ移動する対象ファイルの URL
+    /// - Throws: 権限エラー設定時は `PrefSnapError.permissionDenied`、ファイル未存在時は `PrefSnapError.fileOperationFailed`
+    func trashItem(at url: URL) throws {
+        let normalized = url.standardizedFileURL
+        lock.lock()
+        defer { lock.unlock() }
+
+        if failTrashWithPermissionError {
+            throw PrefSnapError.permissionDenied(
+                target: normalized.lastPathComponent,
+                detail: "Permission denied",
+                settingsURL: SystemPreferencesURL.fullDiskAccess
+            )
+        }
+        guard files.removeValue(forKey: normalized) != nil else {
+            throw PrefSnapError.fileOperationFailed(path: normalized.path, detail: "File not found")
+        }
+        trashedURLs.append(normalized)
+    }
+
+    /// ゴミ箱へ移動された正規化済み URL 一覧を返す。
+    /// - Returns: ゴミ箱移動が成功した URL の配列
+    func recordedTrashedURLs() -> [URL] {
+        lock.lock()
+        defer { lock.unlock() }
+        return trashedURLs
     }
 
     func allStoredFileNames() -> [String] {

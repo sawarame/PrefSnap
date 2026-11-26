@@ -46,6 +46,10 @@ public protocol FileStoring: Sendable {
     func readData(from url: URL) throws -> Data
     func writeData(_ data: Data, to url: URL) throws
     func fileModificationDate(at url: URL) -> Date?
+    /// 指定されたファイルを macOS のゴミ箱へ移動する。
+    /// - Parameter url: ゴミ箱へ移動する対象ファイルの URL
+    /// - Throws: 権限不足時は `PrefSnapError.permissionDenied`、その他の失敗時は `PrefSnapError.fileOperationFailed`
+    func trashItem(at url: URL) throws
 }
 
 /// 設定反映のための macOS プロセス再起動を抽象化するプロトコル。
