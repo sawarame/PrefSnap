@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <!-- macOS 標準アイコン相当のソフトなドロップシャドウ -->
+    <filter id="appShadow" x="40" y="48" width="944" height="944" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#0A193D" flood-opacity="0.28"/>
+    </filter>
+
+    <!-- スライダーノブ用の控えめな輪郭シャドウ -->
+    <filter id="knobShadow" x="300" y="300" width="440" height="440" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#0D235C" flood-opacity="0.26"/>
+    </filter>
+  </defs>
+
+  <!-- 本体ベース（macOS Squircle 824x824、クリアブルー単色） -->
+  <g filter="url(#appShadow)">
+    <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="#2563EB"/>
+  </g>
+
+  <!-- 設定スナップショットを表す控えめな内側パネル（単色フラット） -->
+  <rect x="260" y="260" width="504" height="504" rx="84" ry="84" fill="#1D51CE"/>
+
+  <!-- 四隅の撮影フレーム（カメラファインダー、純白単色） -->
+  <g stroke="#FFFFFF" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- 左上 -->
+    <path d="M224 334 L224 274 Q224 224 274 224 L334 224"/>
+    <!-- 右上 -->
+    <path d="M690 224 L750 224 Q800 224 800 274 L800 334"/>
+    <!-- 左下 -->
+    <path d="M224 690 L224 750 Q224 800 274 800 L334 800"/>
+    <!-- 右下 -->
+    <path d="M690 800 L750 800 Q800 800 800 750 L800 690"/>
+  </g>
+
+  <!-- 中央の3段設定スライダー（未選択: ネイビー単色、選択部: スカイブルー単色） -->
+  <g>
+    <!-- 上段スライダー -->
+    <rect x="316" y="370" width="392" height="44" rx="22" fill="#14358A"/>
+    <rect x="316" y="370" width="144" height="44" rx="22" fill="#38BDF8"/>
+
+    <!-- 中段スライダー -->
+    <rect x="316" y="490" width="392" height="44" rx="22" fill="#14358A"/>
+    <rect x="316" y="490" width="302" height="44" rx="22" fill="#38BDF8"/>
+
+    <!-- 下段スライダー -->
+    <rect x="316" y="610" width="392" height="44" rx="22" fill="#14358A"/>
+    <rect x="316" y="610" width="188" height="44" rx="22" fill="#38BDF8"/>
+  </g>
+
+  <!-- スライダーの白いノブ（純白単色） -->
+  <g filter="url(#knobShadow)">
+    <!-- 上段ノブ（左寄り） -->
+    <circle cx="440" cy="392" r="42" fill="#FFFFFF"/>
+    <!-- 中段ノブ（右寄り） -->
+    <circle cx="598" cy="512" r="42" fill="#FFFFFF"/>
+    <!-- 下段ノブ（中央寄り） -->
+    <circle cx="484" cy="632" r="42" fill="#FFFFFF"/>
+  </g>
+</svg>

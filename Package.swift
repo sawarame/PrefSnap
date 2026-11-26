@@ -34,7 +34,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "PrefSnap",
-            dependencies: ["PrefSnapCore"]
+            dependencies: ["PrefSnapCore"],
+            resources: [
+                .copy("Resources")
+            ]
         ),
         .testTarget(
             name: "PrefSnapCoreTests",

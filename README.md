@@ -1,3 +1,5 @@
+<img src="Resources/Icons/AppIcon.png" alt="PrefSnap アプリアイコン" width="128" height="128">
+
 # PrefSnap
 
 macOS のシステム設定・メニューバー設定・キーボードショートカット・修飾キーリマップを、人間が読めて Git で差分管理しやすい整形済み JSON としてエクスポートし、別の Mac で差分確認しながら安全にインポート＆ロールバックできるネイティブ macOS アプリです。
@@ -49,5 +51,7 @@ swift run PrefSnap
 - `Sources/PrefSnap`: SwiftUI（`Observation` フレームワーク）によるネイティブ macOS アプリ UI
 - `Tests/PrefSnapCoreTests`: モックを用いたユニットテスト
 - `Resources/Info.plist`: `.app` バンドル組み立て時に利用するアプリ情報テンプレート
+- `Resources/Icons/`: アプリアイコンの編集用元データ（`AppIcon.svg` / `AppIcon_dev.svg`）および事前変換済み 1024×1024px PNG（`AppIcon.png` / `AppIcon_dev.png`）
+- `scripts/generate-icons.sh`: 元データ SVG から 1024×1024px 透過 PNG を再生成し、`Resources/Icons/` と `Sources/PrefSnap/Resources/` へ同期するスクリプト
 - `scripts/build-app.sh` / `scripts/build-dmg.sh`: `.app` バンドルおよび `.dmg` ディスクイメージの組み立てスクリプト
 - `VERSION`: アプリのセマンティックバージョン定義
