@@ -71,9 +71,54 @@ public struct BackupManager: Sendable {
     }
 
     /// 選択されたバックアップファイルを読み込み、`PrefSnapSnapshot` として返す。
+    /// - Parameter record: 読み込み対象のバックアップレコード
+    /// - Returns: デコードされた `PrefSnapSnapshot`
     public func loadBackup(_ record: BackupRecord) throws -> PrefSnapSnapshot {
         let data = try fileStore.readData(from: record.fileURL)
         return try serializer.decode(data)
+    }
+
+    /// 指定されたバックアップファイルを安全検証の上でゴミ箱へ移動する。
+    /// - Parameter record: 削除対象のバックアップレコード
+    /// - Throws: バックアップ保存先直下の `.json` ファイル以外が指定された場合、またはゴミ箱移動に失敗した場合に `PrefSnapError` を送出する
+    public func deleteBackup(_ record: BackupRecord) throws {
+        let targetURL = record.fileURL
+        guard isValidBackupFileURL(targetURL) else {
+            throw PrefSnapError.fileOperationFailed(
+                path: targetURL.path,
+                detail: "バックアップディレクトリ直下の JSON ファイル以外は削除できません。"
+            )
+        }
+        try fileStore.trashItem(at: targetURL)
+    }
+
+    /// 対象 URL が `backupDirectory` 直下の `.json` ファイルであるかを検証する。
+    /// - Parameter url: 検証対象のファイル URL
+    /// - Returns: `backupDirectory` 直下かつ拡張子が `.json` であれば `true`、それ以外は `false`
+    private func isValidBackupFileURL(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+
+        // 標準化およびシンボリックリンク解決後のパスで backupDirectory 直下かを検証する
+        let resolvedBackupDir = fileStore.backupDirectory.resolvingSymlinksInPath().standardizedFileURL
+        let standardizedResolvedTarget = url.standardizedFileURL.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedTarget = url.resolvingSymlinksInPath().standardizedFileURL
+
+        guard
+            standardizedResolvedTarget.deletingLastPathComponent().standardizedFileURL.path == resolvedBackupDir.path,
+            resolvedTarget.deletingLastPathComponent().standardizedFileURL.path == resolvedBackupDir.path
+        else {
+            return false
+        }
+
+        // 拡張子が .json であることを確認し、バックアップ以外のファイル削除を防ぐ
+        guard
+            standardizedResolvedTarget.pathExtension.lowercased() == "json",
+            resolvedTarget.pathExtension.lowercased() == "json"
+        else {
+            return false
+        }
+
+        return true
     }
 
     private static func makeFileName(for date: Date) -> String {

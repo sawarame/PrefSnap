@@ -48,6 +48,8 @@ final class AppViewModel {
     var selectedBackupID: String?
     var rollbackPreviewItems: [DiffItem] = []
     var lastRollbackResult: ApplyResult?
+    /// 削除確認ダイアログの表示対象となるバックアップレコード。
+    var pendingDeleteBackup: BackupRecord?
 
     // MARK: - 共通エラー表示
     var activeIssues: [ItemIssue] = []
@@ -270,11 +272,15 @@ final class AppViewModel {
 
     // MARK: - Rollback アクション
 
-    /// 保存済みバックアップ一覧を読み込む。
+    /// 保存済みバックアップ一覧を読み込み、選択状態とプレビューを最新化する。
     func refreshBackups() {
         do {
             backups = try backupManager.listBackups()
-            if selectedBackupID == nil, let first = backups.first {
+            if backups.isEmpty {
+                selectedBackupID = nil
+                rollbackPreviewItems = []
+            } else if selectedBackupID == nil || !backups.contains(where: { $0.id == selectedBackupID }),
+                      let first = backups.first {
                 selectedBackupID = first.id
                 loadRollbackPreview(for: first)
             }
@@ -284,10 +290,15 @@ final class AppViewModel {
     }
 
     /// 選択されたバックアップを現在環境と比較し、復元される差分をプレビュー表示する。
-    func loadRollbackPreview(for record: BackupRecord) {
+    /// - Parameters:
+    ///   - record: プレビュー対象のバックアップレコード
+    ///   - clearError: 読み込み開始時に既存のエラーバナーおよび警告一覧をクリアするかどうか
+    func loadRollbackPreview(for record: BackupRecord, clearError: Bool = true) {
         selectedBackupID = record.id
         isBusy = true
-        errorBannerMessage = nil
+        if clearError {
+            errorBannerMessage = nil
+        }
 
         let backupManager = self.backupManager
         let exporter = self.exporter
@@ -310,11 +321,96 @@ final class AppViewModel {
                 }.value
 
                 self.rollbackPreviewItems = diff.items
-                self.activeIssues = diff.issues
+                if clearError {
+                    self.activeIssues = diff.issues
+                } else if !diff.issues.isEmpty {
+                    // 削除失敗時の権限エラー表示を維持しつつプレビュー取得時の警告を追加する
+                    self.activeIssues.append(contentsOf: diff.issues)
+                }
             } catch {
-                self.errorBannerMessage = error.localizedDescription
+                if self.errorBannerMessage == nil {
+                    self.errorBannerMessage = error.localizedDescription
+                }
             }
             self.isBusy = false
+        }
+    }
+
+    /// 指定されたバックアップ履歴をゴミ箱へ移動し、一覧・選択状態・プレビューを最新化する。
+    /// - Parameter record: 削除対象のバックアップレコード
+    func deleteBackup(_ record: BackupRecord) {
+        guard !isBusy else { return }
+
+        let wasSelected = selectedBackupID == record.id
+        isBusy = true
+        errorBannerMessage = nil
+        activeIssues = []
+        statusMessage = nil
+
+        let backupManager = self.backupManager
+        Task {
+            let deleteError: Error?
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try backupManager.deleteBackup(record)
+                }.value
+                deleteError = nil
+            } catch {
+                deleteError = error
+            }
+
+            if let deleteError {
+                self.errorBannerMessage = deleteError.localizedDescription
+                if let prefError = deleteError as? PrefSnapError,
+                   case let .permissionDenied(target, detail, settingsURL) = prefError {
+                    self.activeIssues = [
+                        ItemIssue(
+                            itemTitle: "バックアップ削除 (\(target))",
+                            message: detail,
+                            isPermissionError: true,
+                            systemSettingsURL: settingsURL
+                        )
+                    ]
+                }
+            } else {
+                self.statusMessage = "\(record.fileName) をゴミ箱へ移動しました。"
+            }
+
+            // 削除の成否にかかわらず、バックアップ一覧をディスク上の最新状態へ同期する
+            let refreshedBackups: [BackupRecord]?
+            do {
+                refreshedBackups = try await Task.detached(priority: .userInitiated) {
+                    try backupManager.listBackups()
+                }.value
+            } catch {
+                if self.errorBannerMessage == nil {
+                    self.errorBannerMessage = error.localizedDescription
+                }
+                refreshedBackups = nil
+            }
+
+            guard let updatedBackups = refreshedBackups else {
+                self.isBusy = false
+                return
+            }
+
+            self.backups = updatedBackups
+
+            if updatedBackups.isEmpty {
+                self.selectedBackupID = nil
+                self.rollbackPreviewItems = []
+                self.isBusy = false
+            } else if wasSelected
+                || self.selectedBackupID == nil
+                || !updatedBackups.contains(where: { $0.id == self.selectedBackupID }) {
+                let first = updatedBackups[0]
+                self.selectedBackupID = first.id
+                // 削除失敗時はエラーバナーと権限エラー表示を消さずにプレビューを更新する
+                self.loadRollbackPreview(for: first, clearError: deleteError == nil)
+            } else {
+                // 非選択の履歴を削除した（または削除失敗後も選択中履歴が残っている）場合は選択とプレビューを維持する
+                self.isBusy = false
+            }
         }
     }
 

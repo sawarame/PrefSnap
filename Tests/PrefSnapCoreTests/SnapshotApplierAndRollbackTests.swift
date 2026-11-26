@@ -492,4 +492,126 @@ struct SnapshotApplierAndRollbackTests {
         #expect(commandRunner.storedDefaultsData(domain: "com.apple.controlcenter", key: "ControlCenterDisplayableChronoControlsProviderConfiguration", isByHost: false) == nil)
         #expect(Set(rollbackResult.restartedProcesses) == [.controlCenter, .systemUIServer])
     }
+
+    /// テスト用の最小構成スナップショットを生成するヘルパー関数。
+    /// - Parameter hostName: スナップショットに設定するホスト名
+    /// - Returns: テスト用の `PrefSnapSnapshot`
+    private func makeTestSnapshot(hostName: String = "Test-Mac") -> PrefSnapSnapshot {
+        PrefSnapSnapshot(
+            exportedAt: "2026-11-27T07:00:00Z",
+            sourceHost: SourceHostMetadata(hostName: hostName, osVersion: "15", architecture: "arm64"),
+            systemDefaults: [:],
+            menuBar: [:],
+            symbolicHotKeys: [:],
+            appShortcuts: [:],
+            modifierMappings: []
+        )
+    }
+
+    @Test("BackupManager.deleteBackup で最新履歴や最後の 1 件をゴミ箱へ移動でき一覧が更新されること")
+    func deleteBackupMovesFileToTrashAndUpdatesBackupList() throws {
+        let fileStore = MockFileStore()
+        let env = MockEnvironmentProvider(fixedDate: Date(timeIntervalSince1970: 1_764_000_000))
+        let manager = BackupManager(fileStore: fileStore, environment: env)
+
+        let older = try manager.saveBackup(makeTestSnapshot(hostName: "Mac-Old"))
+        env.fixedDate = Date(timeIntervalSince1970: 1_764_003_600)
+        let latest = try manager.saveBackup(makeTestSnapshot(hostName: "Mac-Latest"))
+
+        #expect(try manager.listBackups().map(\.id) == [latest.id, older.id])
+
+        // 最新の「直前」バックアップを削除できること
+        try manager.deleteBackup(latest)
+
+        let afterFirstDelete = try manager.listBackups()
+        #expect(afterFirstDelete.map(\.id) == [older.id])
+        #expect(fileStore.recordedTrashedURLs() == [latest.fileURL.standardizedFileURL])
+
+        // 最後の 1 件も削除でき、一覧が空になること
+        try manager.deleteBackup(older)
+
+        let afterSecondDelete = try manager.listBackups()
+        #expect(afterSecondDelete.isEmpty)
+        #expect(fileStore.recordedTrashedURLs() == [latest.fileURL.standardizedFileURL, older.fileURL.standardizedFileURL])
+    }
+
+    @Test("BackupManager.deleteBackup は backupDirectory 外や非 JSON ファイルの削除を拒否すること")
+    func deleteBackupRejectsPathsOutsideBackupDirectoryAndNonJSONFiles() throws {
+        let fileStore = MockFileStore()
+        let env = MockEnvironmentProvider(fixedDate: Date(timeIntervalSince1970: 1_764_000_000))
+        let manager = BackupManager(fileStore: fileStore, environment: env)
+
+        let validBackup = try manager.saveBackup(makeTestSnapshot())
+        let dummyData = Data("{}".utf8)
+
+        // 範囲外の各種不正パスを用意（モック上に実在しても削除されないことを検証する）
+        let outsideDirURL = URL(fileURLWithPath: "/mock/OtherDirectory/PrefSnap_Backup_20261127_070000.json")
+        let traversalURL = fileStore.backupDirectory.appendingPathComponent("../escape.json")
+        let subDirectoryURL = fileStore.backupDirectory.appendingPathComponent("nested/PrefSnap_Backup_20261127_070000.json")
+        let nonJSONURL = fileStore.backupDirectory.appendingPathComponent("notes.txt")
+
+        for invalidURL in [outsideDirURL, traversalURL, subDirectoryURL, nonJSONURL] {
+            try fileStore.writeData(dummyData, to: invalidURL)
+            let record = BackupRecord(
+                id: invalidURL.lastPathComponent,
+                fileName: invalidURL.lastPathComponent,
+                fileURL: invalidURL,
+                createdAt: env.fixedDate
+            )
+
+            do {
+                try manager.deleteBackup(record)
+                Issue.record("対象外パス \(invalidURL.path) の削除が拒否されませんでした。")
+            } catch let error as PrefSnapError {
+                if case .fileOperationFailed = error {
+                    // 期待どおり拒否された
+                } else {
+                    Issue.record("想定外のエラー型です: \(error)")
+                }
+            }
+        }
+
+        // 不正パスはいずれもゴミ箱へ移動されず、正規のバックアップも残っていること
+        #expect(fileStore.recordedTrashedURLs().isEmpty)
+        #expect(try manager.listBackups().map(\.id) == [validBackup.id])
+    }
+
+    @Test("BackupManager.deleteBackup で権限エラーや存在しないファイルの削除時に適切なエラーが返ること")
+    func deleteBackupPropagatesPermissionAndNotFoundErrors() throws {
+        let fileStore = MockFileStore()
+        let env = MockEnvironmentProvider(fixedDate: Date(timeIntervalSince1970: 1_764_000_000))
+        let manager = BackupManager(fileStore: fileStore, environment: env)
+
+        let saved = try manager.saveBackup(makeTestSnapshot())
+
+        // 権限エラー発生時は PrefSnapError.permissionDenied が返り、ファイルは消えないこと
+        fileStore.failTrashWithPermissionError = true
+        do {
+            try manager.deleteBackup(saved)
+            Issue.record("権限エラーが送出されませんでした。")
+        } catch let error as PrefSnapError {
+            guard case let .permissionDenied(target, _, settingsURL) = error else {
+                Issue.record("permissionDenied 以外のエラーです: \(error)")
+                return
+            }
+            #expect(target == saved.fileName)
+            #expect(settingsURL == SystemPreferencesURL.fullDiskAccess)
+        }
+        #expect(try manager.listBackups().map(\.id) == [saved.id])
+
+        // 権限エラー解除後に削除し、2 回目（ファイル未存在）は fileOperationFailed になること
+        fileStore.failTrashWithPermissionError = false
+        try manager.deleteBackup(saved)
+
+        do {
+            try manager.deleteBackup(saved)
+            Issue.record("存在しないファイルの削除でエラーが送出されませんでした。")
+        } catch let error as PrefSnapError {
+            if case .fileOperationFailed = error {
+                // 期待どおりファイル未存在エラーが送出された
+            } else {
+                Issue.record("fileOperationFailed 以外のエラーです: \(error)")
+            }
+        }
+    }
 }

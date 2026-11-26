@@ -126,13 +126,24 @@ public struct SystemPlistStore: PlistStoring {
         }
     }
 
+    /// 指定されたエラーがファイルアクセス権限不足に該当するかを判定する。
+    /// - Parameter error: 判定対象のエラー
+    /// - Returns: 権限不足エラーの場合は `true`、それ以外は `false`
     static func isPermissionError(_ error: Error) -> Bool {
         let nsError = error as NSError
         if nsError.domain == NSCocoaErrorDomain {
-            return nsError.code == NSFileReadNoPermissionError || nsError.code == NSFileWriteNoPermissionError
+            if nsError.code == NSFileReadNoPermissionError || nsError.code == NSFileWriteNoPermissionError {
+                return true
+            }
         }
         if nsError.domain == NSPOSIXErrorDomain {
-            return nsError.code == Int(EACCES) || nsError.code == Int(EPERM)
+            if nsError.code == Int(EACCES) || nsError.code == Int(EPERM) {
+                return true
+            }
+        }
+        // 下位エラーに POSIX 権限エラーがラップされている場合も検出する
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+            return isPermissionError(underlying)
         }
         return false
     }
@@ -307,6 +318,24 @@ public struct LocalFileStore: FileStoring {
     public func fileModificationDate(at url: URL) -> Date? {
         let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
         return values?.contentModificationDate
+    }
+
+    /// 指定されたファイルを macOS 標準 API を用いてゴミ箱へ移動する。
+    /// - Parameter url: ゴミ箱へ移動する対象ファイルの URL
+    /// - Throws: 権限不足時は `PrefSnapError.permissionDenied`、その他の失敗時は `PrefSnapError.fileOperationFailed`
+    public func trashItem(at url: URL) throws {
+        do {
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        } catch {
+            if SystemPlistStore.isPermissionError(error) {
+                throw PrefSnapError.permissionDenied(
+                    target: url.lastPathComponent,
+                    detail: error.localizedDescription,
+                    settingsURL: SystemPreferencesURL.fullDiskAccess
+                )
+            }
+            throw PrefSnapError.fileOperationFailed(path: url.path, detail: error.localizedDescription)
+        }
     }
 }
 
