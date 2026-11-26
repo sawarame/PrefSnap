@@ -109,31 +109,47 @@ else
     exit 1
 fi
 
-# AppIcon.svg が配置されている場合は macOS 標準アイコン (.icns) を生成して組み込む
-APP_ICON_SVG="${REPO_ROOT}/Resources/Icons/AppIcon.svg"
-if [ -f "${APP_ICON_SVG}" ] && command -v qlmanage >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
-    echo "[PrefSnap] アプリアイコン (AppIcon.icns) を生成しています..."
-    ICON_TMP_DIR="$(mktemp -d)"
-    ICONSET_DIR="${ICON_TMP_DIR}/AppIcon.iconset"
-    mkdir -p "${ICONSET_DIR}"
+# ビルド構成に応じた事前生成済み 1024x1024px PNG から macOS 標準アイコン (.icns) を生成して組み込む
+# CI 環境（ヘッドレス macOS）でも確実に動作するよう qlmanage には依存せず sips + iconutil のみを使用する
+if [ "${CONFIGURATION}" = "release" ]; then
+    APP_ICON_PNG="${REPO_ROOT}/Resources/Icons/AppIcon.png"
+else
+    APP_ICON_PNG="${REPO_ROOT}/Resources/Icons/AppIcon_dev.png"
+fi
 
-    qlmanage -t -s 1024 -o "${ICON_TMP_DIR}" "${APP_ICON_SVG}" >/dev/null 2>&1
-    BASE_PNG="${ICON_TMP_DIR}/AppIcon.svg.png"
+if [ ! -f "${APP_ICON_PNG}" ]; then
+    echo "[PrefSnap] エラー: アプリアイコンのベース PNG が見つかりません (${APP_ICON_PNG})" >&2
+    exit 1
+fi
 
-    if [ -f "${BASE_PNG}" ]; then
-        sips -z 16 16     "${BASE_PNG}" --out "${ICONSET_DIR}/icon_16x16.png" >/dev/null
-        sips -z 32 32     "${BASE_PNG}" --out "${ICONSET_DIR}/icon_16x16@2x.png" >/dev/null
-        sips -z 32 32     "${BASE_PNG}" --out "${ICONSET_DIR}/icon_32x32.png" >/dev/null
-        sips -z 64 64     "${BASE_PNG}" --out "${ICONSET_DIR}/icon_32x32@2x.png" >/dev/null
-        sips -z 128 128   "${BASE_PNG}" --out "${ICONSET_DIR}/icon_128x128.png" >/dev/null
-        sips -z 256 256   "${BASE_PNG}" --out "${ICONSET_DIR}/icon_128x128@2x.png" >/dev/null
-        sips -z 256 256   "${BASE_PNG}" --out "${ICONSET_DIR}/icon_256x256.png" >/dev/null
-        sips -z 512 512   "${BASE_PNG}" --out "${ICONSET_DIR}/icon_256x256@2x.png" >/dev/null
-        sips -z 512 512   "${BASE_PNG}" --out "${ICONSET_DIR}/icon_512x512.png" >/dev/null
-        cp "${BASE_PNG}"               "${ICONSET_DIR}/icon_512x512@2x.png"
-        iconutil -c icns "${ICONSET_DIR}" -o "${RESOURCES_DIR}/AppIcon.icns"
+for icon_cmd in sips iconutil; do
+    if ! command -v "${icon_cmd}" >/dev/null 2>&1; then
+        echo "[PrefSnap] エラー: アイコン生成に必要なコマンドが見つかりません (${icon_cmd})" >&2
+        exit 1
     fi
-    rm -rf "${ICON_TMP_DIR}"
+done
+
+echo "[PrefSnap] アプリアイコン (AppIcon.icns) を生成しています ($(basename "${APP_ICON_PNG}"))..."
+ICON_TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "${ICON_TMP_DIR:-}"' EXIT
+ICONSET_DIR="${ICON_TMP_DIR}/AppIcon.iconset"
+mkdir -p "${ICONSET_DIR}"
+
+sips -z 16 16     "${APP_ICON_PNG}" --out "${ICONSET_DIR}/icon_16x16.png" >/dev/null
+sips -z 32 32     "${APP_ICON_PNG}" --out "${ICONSET_DIR}/icon_16x16@2x.png" >/dev/null
+sips -z 32 32     "${APP_ICON_PNG}" --out "${ICONSET_DIR}/icon_32x32.png" >/dev/null
+sips -z 64 64     "${APP_ICON_PNG}" --out "${ICONSET_DIR}/icon_32x32@2x.png" >/dev/null
+sips -z 128 128   "${APP_ICON_PNG}" --out "${ICONSET_DIR}/icon_128x128.png" >/dev/null
+sips -z 256 256   "${APP_ICON_PNG}" --out "${ICONSET_DIR}/icon_128x128@2x.png" >/dev/null
+sips -z 256 256   "${APP_ICON_PNG}" --out "${ICONSET_DIR}/icon_256x256.png" >/dev/null
+sips -z 512 512   "${APP_ICON_PNG}" --out "${ICONSET_DIR}/icon_256x256@2x.png" >/dev/null
+sips -z 512 512   "${APP_ICON_PNG}" --out "${ICONSET_DIR}/icon_512x512.png" >/dev/null
+sips -z 1024 1024 "${APP_ICON_PNG}" --out "${ICONSET_DIR}/icon_512x512@2x.png" >/dev/null
+iconutil -c icns "${ICONSET_DIR}" -o "${RESOURCES_DIR}/AppIcon.icns"
+
+if [ ! -s "${RESOURCES_DIR}/AppIcon.icns" ]; then
+    echo "[PrefSnap] エラー: AppIcon.icns の生成に失敗しました (${RESOURCES_DIR}/AppIcon.icns)" >&2
+    exit 1
 fi
 
 # 署名識別子が指定されている場合は Developer ID 署名（Hardened Runtime）、未指定時はアドホック署名を適用する
