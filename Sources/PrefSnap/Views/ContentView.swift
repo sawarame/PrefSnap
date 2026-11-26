@@ -1,5 +1,46 @@
+import AppKit
 import PrefSnapCore
 import SwiftUI
+
+/// SwiftUI ビューが属する `NSWindow` を取得し、ウィンドウ接続時に通知するための補助ビュー。
+private struct MainWindowAccessor: NSViewRepresentable {
+    /// `NSWindow` へアタッチされた際に呼び出されるコールバック。
+    let onWindowAttached: @MainActor (NSWindow) -> Void
+
+    /// `NSWindow` のアタッチを検知するカスタム `NSView`。
+    final class ObservingView: NSView {
+        /// ウィンドウ接続時の通知ハンドラ。
+        var onWindowAttached: (@MainActor (NSWindow) -> Void)?
+
+        /// ビューがウィンドウへ移動したタイミングで `NSWindow` を通知する。
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window {
+                onWindowAttached?(window)
+            }
+        }
+    }
+
+    /// 監視用の `NSView` を生成する。
+    /// - Parameter context: SwiftUI から渡されるコンテキスト
+    /// - Returns: 生成した `ObservingView`
+    func makeNSView(context: Context) -> ObservingView {
+        let view = ObservingView(frame: .zero)
+        view.onWindowAttached = onWindowAttached
+        return view
+    }
+
+    /// ビュー更新時にハンドラを最新化し、すでにウィンドウへ接続済みであれば通知する。
+    /// - Parameters:
+    ///   - nsView: 更新対象の `ObservingView`
+    ///   - context: SwiftUI から渡されるコンテキスト
+    func updateNSView(_ nsView: ObservingView, context: Context) {
+        nsView.onWindowAttached = onWindowAttached
+        if let window = nsView.window {
+            onWindowAttached(window)
+        }
+    }
+}
 
 /// アプリ全体のルート画面。
 /// macOS 26 (Tahoe) 以降で `NavigationSplitView` のタイトルバー透過オーバーレイにより
@@ -7,6 +48,8 @@ import SwiftUI
 /// 標準タイトルバーの下に固定左メニューとメイン画面を並べる構成を採用している。
 struct ContentView: View {
     @Bindable var viewModel: AppViewModel
+    /// メインウィンドウが利用可能になった際に呼び出されるコールバック。
+    var onMainWindowAttached: (@MainActor (NSWindow) -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 0) {
@@ -56,6 +99,11 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
+        }
+        .background {
+            if let onMainWindowAttached {
+                MainWindowAccessor(onWindowAttached: onMainWindowAttached)
+            }
         }
         .onAppear {
             viewModel.refreshBackups()
