@@ -27,7 +27,7 @@ public struct SnapshotDiffEngine: Sendable {
             let currentVal = currentDict[descriptor.id]?.value?.normalized(for: descriptor.valueType)
             let targetVal = targetWrapped.value?.normalized(for: descriptor.valueType)
 
-            guard currentVal != targetVal else { continue }
+            guard !Self.areDefaultsValuesEqual(currentVal, targetVal, for: descriptor) else { continue }
 
             items.append(
                 DiffItem(
@@ -272,6 +272,34 @@ public struct SnapshotDiffEngine: Sendable {
         )
     }
 
+    /// `defaults` 設定値の現在値と目標値が差分判定上等価かどうかを返す。
+    /// `SettingSubcategory.controlCenterLayout` の 3 項目かつ両辺が `.data` の場合のみ、
+    /// 生バイト一致に加えて意味的正規化による等価判定を行う。
+    /// - Parameters:
+    ///   - currentVal: 現在の設定値（正規化済み）
+    ///   - targetVal: インポート対象の設定値（正規化済み）
+    ///   - descriptor: 対象設定項目のカタログ定義
+    /// - Returns: 差分なしとみなせる場合は `true`
+    private static func areDefaultsValuesEqual(
+        _ currentVal: DefaultsValue?,
+        _ targetVal: DefaultsValue?,
+        for descriptor: SettingDescriptor
+    ) -> Bool {
+        if currentVal == targetVal {
+            return true
+        }
+        guard descriptor.subcategory == .controlCenterLayout,
+              case let .data(currentData) = currentVal,
+              case let .data(targetData) = targetVal
+        else {
+            return false
+        }
+        return ControlCenterLayoutNormalizer.areSemanticallyEqual(currentData, targetData)
+    }
+
+    /// アプリケーションショートカット辞書を表示用文字列へ整形する。
+    /// - Parameter map: メニュータイトルとショートカット文字列の辞書
+    /// - Returns: 画面表示用の整形済み文字列
     private static func formatAppShortcuts(_ map: [String: String]) -> String {
         if map.isEmpty {
             return "未設定"
