@@ -230,4 +230,103 @@ struct AppTerminationCoordinatorTests {
         #expect(coordinator.shouldAllowApplicationTermination() == true)
         #expect(confirmationCount.value == 0)
     }
+
+    @Test("自動アップデート終了エグゼキューターがシート解除→次ランループで通常終了→待機後フォールバック終了の順で実行されること")
+    func automaticUpdateTerminationExecutorRunsStepsInOrderAndInvokesFallback() async {
+        let events = Box<[String]>([])
+        let scheduledActions = Box<[@MainActor @Sendable () -> Void]>([])
+        let sleepContinuation = Box<CheckedContinuation<Void, Error>?>(nil)
+        let forceExitCodes = Box<[Int32]>([])
+
+        let executor = AutomaticUpdateTerminationExecutor(
+            fallbackDelayNanoseconds: 100_000_000,
+            prepareTermination: {
+                events.value.append("prepare")
+            },
+            dismissSheets: {
+                events.value.append("dismissSheets")
+            },
+            scheduleNextRunLoop: { action in
+                events.value.append("scheduleNextRunLoop")
+                scheduledActions.value.append(action)
+            },
+            requestGracefulTermination: {
+                events.value.append("terminate")
+            },
+            forceExit: { code in
+                events.value.append("forceExit:\(code)")
+                forceExitCodes.value.append(code)
+            },
+            sleepOperation: { _ in
+                try await withCheckedThrowingContinuation { continuation in
+                    Task { @MainActor in
+                        sleepContinuation.value = continuation
+                    }
+                }
+            }
+        )
+
+        executor.execute()
+        // 多重呼び出し時は二重実行されないこと
+        executor.execute()
+
+        #expect(executor.hasStarted == true)
+        #expect(events.value == ["prepare", "dismissSheets", "scheduleNextRunLoop"])
+        #expect(scheduledActions.value.count == 1)
+
+        // 次ランループサイクル発火時に通常終了が要求されること
+        scheduledActions.value[0]()
+        #expect(events.value == ["prepare", "dismissSheets", "scheduleNextRunLoop", "terminate"])
+        #expect(executor.didInvokeForceExit == false)
+
+        // フォールバック待機タスクが待機状態に入るまで譲ってから待機完了を通知する
+        while sleepContinuation.value == nil {
+            await Task.yield()
+        }
+        sleepContinuation.value?.resume()
+
+        // フォールバック強制終了が実行されるのを待機して検証する
+        while !executor.didInvokeForceExit {
+            await Task.yield()
+        }
+        #expect(forceExitCodes.value == [0])
+        #expect(events.value == ["prepare", "dismissSheets", "scheduleNextRunLoop", "terminate", "forceExit:0"])
+    }
+
+    @Test("通常終了フロー開始時に cancelFallback を呼ぶとフォールバック強制終了が抑止されること")
+    func automaticUpdateTerminationExecutorCancelsFallbackOnGracefulShutdown() async {
+        let forceExitCount = Box(0)
+        let sleepStarted = Box(false)
+
+        let executor = AutomaticUpdateTerminationExecutor(
+            fallbackDelayNanoseconds: 60_000_000_000,
+            prepareTermination: {},
+            dismissSheets: {},
+            scheduleNextRunLoop: { action in
+                action()
+            },
+            requestGracefulTermination: {},
+            forceExit: { _ in
+                forceExitCount.value += 1
+            },
+            sleepOperation: { _ in
+                await MainActor.run {
+                    sleepStarted.value = true
+                }
+                try await Task.sleep(nanoseconds: 60_000_000_000)
+            }
+        )
+
+        executor.execute()
+        while !sleepStarted.value {
+            await Task.yield()
+        }
+
+        // applicationWillTerminate 相当でキャンセルした場合、フォールバック終了は実行されないこと
+        executor.cancelFallback()
+        await Task.yield()
+
+        #expect(executor.didInvokeForceExit == false)
+        #expect(forceExitCount.value == 0)
+    }
 }

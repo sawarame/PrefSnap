@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import PrefSnapCore
 import SwiftUI
 
@@ -77,6 +78,8 @@ final class PrefSnapAppDelegate: NSObject, NSApplicationDelegate {
     private var isBusyProvider: @MainActor () -> Bool = { false }
     /// 終了判定・二重確認防止・再入防止を担当するコーディネーター。
     private var terminationCoordinator: AppTerminationCoordinator?
+    /// 自動アップデート再起動時の終了シーケンスを制御するエグゼキューター。
+    private var automaticUpdateTerminationExecutor: AutomaticUpdateTerminationExecutor?
     /// メインウィンドウへ設定したデリゲートプロキシの強参照保持用プロパティ。
     private var windowDelegateProxy: WindowCloseDelegateProxy?
     /// 現在フック済みのメインウィンドウ。
@@ -104,6 +107,47 @@ final class PrefSnapAppDelegate: NSObject, NSApplicationDelegate {
     /// 自動アップデート再起動に伴う終了要求時に終了確認ダイアログをバイパスできるよう準備する。
     func prepareForAutomaticTermination() {
         terminationCoordinator?.prepareForAutomaticTermination()
+    }
+
+    /// 自動アップデート再起動に伴うアプリ終了シーケンス（終了確認バイパス・シート解除・通常終了・フォールバック強制終了）を開始する。
+    func beginAutomaticUpdateTermination() {
+        if let existingExecutor = automaticUpdateTerminationExecutor {
+            existingExecutor.execute()
+            return
+        }
+
+        let executor = AutomaticUpdateTerminationExecutor(
+            prepareTermination: { [weak self] in
+                self?.prepareForAutomaticTermination()
+            },
+            dismissSheets: {
+                Self.dismissAllAttachedSheets(in: NSApplication.shared)
+            },
+            requestGracefulTermination: {
+                NSApplication.shared.terminate(nil)
+            },
+            forceExit: { code in
+                Darwin.exit(code)
+            }
+        )
+        automaticUpdateTerminationExecutor = executor
+        executor.execute()
+    }
+
+    /// 指定された `NSApplication` 上の全ウィンドウにアタッチされているシートを AppKit レベルで明示的に終了する。
+    /// - Parameter application: シートを終了させる対象の `NSApplication`
+    static func dismissAllAttachedSheets(in application: NSApplication) {
+        for window in application.windows {
+            // ネストされたシートも含めて後ろから順に確実に閉じる
+            for sheet in window.sheets.reversed() {
+                window.endSheet(sheet)
+                sheet.orderOut(nil)
+            }
+            if let attachedSheet = window.attachedSheet {
+                window.endSheet(attachedSheet)
+                attachedSheet.orderOut(nil)
+            }
+        }
     }
 
     /// メインウィンドウへクローズ制御用のデリゲートプロキシを接続する。
@@ -156,6 +200,12 @@ final class PrefSnapAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let shouldTerminate = terminationCoordinator?.shouldAllowApplicationTermination() ?? true
         return shouldTerminate ? .terminateNow : .terminateCancel
+    }
+
+    /// アプリが通常終了フローへ入った際に、自動アップデート用のフォールバック終了タスクをキャンセルする。
+    /// - Parameter notification: 終了直前通知
+    func applicationWillTerminate(_ notification: Notification) {
+        automaticUpdateTerminationExecutor?.cancelFallback()
     }
 
     /// 処理中の終了確認ダイアログ（`NSAlert`）を表示し、ユーザーの選択結果を返す。
@@ -219,10 +269,11 @@ struct PrefSnapApp: App {
 
     /// ルートアプリケーションを初期化し、AppDelegate へ `isBusy` 参照および自動アップデート終了連携を接続する。
     init() {
-        /// `self` の全プロパティ初期化後に `appDelegate` を安全に束縛するための参照ホルダ。
+        /// `self` の全プロパティ初期化後に `appDelegate` およびフォールバック終了エグゼキューターを安全に保持するための参照ホルダ。
         @MainActor
         final class DelegateHolder {
             weak var delegate: PrefSnapAppDelegate?
+            var fallbackTerminationExecutor: AutomaticUpdateTerminationExecutor?
         }
 
         let delegateHolder = DelegateHolder()
@@ -233,9 +284,27 @@ struct PrefSnapApp: App {
                 NSWorkspace.shared.open(url)
             },
             terminateForUpdateHandler: {
-                // ヘルパー起動完了後は終了確認ダイアログでブロックされず確実に終了させる
-                delegateHolder.delegate?.prepareForAutomaticTermination()
-                NSApplication.shared.terminate(nil)
+                // delegateHolder と NSApplication.shared.delegate の双方から AppDelegate を解決し、参照欠落を防ぐ
+                if let activeDelegate = delegateHolder.delegate ?? (NSApplication.shared.delegate as? PrefSnapAppDelegate) {
+                    activeDelegate.beginAutomaticUpdateTermination()
+                    return
+                }
+
+                // 万が一 AppDelegate 参照が取得できない場合でも、シート解除・通常終了・フォールバック終了を確実に実行する
+                let executor = AutomaticUpdateTerminationExecutor(
+                    prepareTermination: {},
+                    dismissSheets: {
+                        PrefSnapAppDelegate.dismissAllAttachedSheets(in: NSApplication.shared)
+                    },
+                    requestGracefulTermination: {
+                        NSApplication.shared.terminate(nil)
+                    },
+                    forceExit: { code in
+                        Darwin.exit(code)
+                    }
+                )
+                delegateHolder.fallbackTerminationExecutor = executor
+                executor.execute()
             }
         )
         self.viewModel = viewModel

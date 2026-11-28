@@ -135,3 +135,97 @@ public final class AppTerminationCoordinator {
         }
     }
 }
+
+/// 自動アップデート再起動に伴う終了シーケンス（終了確認バイパス・シート解除・次ランループでの通常終了・
+/// タイムアウト時のフォールバック強制終了）を安全に制御するエグゼキューター。
+@MainActor
+public final class AutomaticUpdateTerminationExecutor {
+    /// 通常終了が完了しなかった場合にフォールバック終了へ切り替えるまでの既定待機時間（2.5 秒）。
+    public static let defaultFallbackDelayNanoseconds: UInt64 = 2_500_000_000
+
+    /// 終了シーケンスがすでに開始されているかどうか。
+    public private(set) var hasStarted = false
+
+    /// フォールバック強制終了が実行されたかどうか。
+    public private(set) var didInvokeForceExit = false
+
+    private let fallbackDelayNanoseconds: UInt64
+    private let prepareTermination: @MainActor () -> Void
+    private let dismissSheets: @MainActor () -> Void
+    private let scheduleNextRunLoop: @MainActor (@escaping @MainActor @Sendable () -> Void) -> Void
+    private let requestGracefulTermination: @MainActor () -> Void
+    private let forceExit: @MainActor (Int32) -> Void
+    private let sleepOperation: @Sendable (UInt64) async throws -> Void
+    private var fallbackTask: Task<Void, Never>?
+
+    /// 自動アップデート終了エグゼキューターを初期化する。
+    /// - Parameters:
+    ///   - fallbackDelayNanoseconds: 通常終了が完了しない場合にフォールバック終了を実行するまでの待機時間（ナノ秒）
+    ///   - prepareTermination: 終了確認ダイアログのバイパス準備を行うクロージャ
+    ///   - dismissSheets: 開いているシートを明示的に終了させるクロージャ
+    ///   - scheduleNextRunLoop: 次のランループサイクルで処理を実行するためのスケジューラ
+    ///   - requestGracefulTermination: `NSApplication.shared.terminate(nil)` 等の通常終了要求クロージャ
+    ///   - forceExit: 通常終了できなかった場合のフォールバック終了クロージャ（終了コードを受け取る）
+    ///   - sleepOperation: フォールバック待機に使用する非同期スリープ処理（テスト差し替え用）
+    public init(
+        fallbackDelayNanoseconds: UInt64 = defaultFallbackDelayNanoseconds,
+        prepareTermination: @escaping @MainActor () -> Void,
+        dismissSheets: @escaping @MainActor () -> Void,
+        scheduleNextRunLoop: @escaping @MainActor (@escaping @MainActor @Sendable () -> Void) -> Void = { action in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    action()
+                }
+            }
+        },
+        requestGracefulTermination: @escaping @MainActor () -> Void,
+        forceExit: @escaping @MainActor (Int32) -> Void,
+        sleepOperation: @escaping @Sendable (UInt64) async throws -> Void = { nanoseconds in
+            try await Task.sleep(nanoseconds: nanoseconds)
+        }
+    ) {
+        self.fallbackDelayNanoseconds = fallbackDelayNanoseconds
+        self.prepareTermination = prepareTermination
+        self.dismissSheets = dismissSheets
+        self.scheduleNextRunLoop = scheduleNextRunLoop
+        self.requestGracefulTermination = requestGracefulTermination
+        self.forceExit = forceExit
+        self.sleepOperation = sleepOperation
+    }
+
+    /// 自動アップデート用の終了シーケンスを開始する（多重呼び出し時は無視する）。
+    public func execute() {
+        guard !hasStarted else { return }
+        hasStarted = true
+
+        // 1. 終了確認ダイアログのバイパスを有効化し、開いているシートを AppKit 側でも確実に閉じる
+        prepareTermination()
+        dismissSheets()
+
+        // 2. シート解除が反映される次のランループサイクルで通常終了を要求する
+        scheduleNextRunLoop { [weak self] in
+            guard let self else { return }
+            self.requestGracefulTermination()
+        }
+
+        // 3. 万が一通常終了がブロックされた場合に備え、短時間後にフォールバック強制終了を実行する
+        let delay = fallbackDelayNanoseconds
+        let sleepOperation = self.sleepOperation
+        fallbackTask = Task { @MainActor [weak self] in
+            do {
+                try await sleepOperation(delay)
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.didInvokeForceExit = true
+            self.forceExit(0)
+        }
+    }
+
+    /// 通常終了フローに入った際に待機中のフォールバック終了タスクをキャンセルする。
+    public func cancelFallback() {
+        fallbackTask?.cancel()
+        fallbackTask = nil
+    }
+}

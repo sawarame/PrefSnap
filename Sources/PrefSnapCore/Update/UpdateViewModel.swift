@@ -31,6 +31,8 @@ public final class UpdateViewModel {
     public private(set) var isChecking = false
     /// アップデート適用（ダウンロード〜検証〜差し替え準備）を実行中かどうか。
     public private(set) var isInstalling = false
+    /// 分離ヘルパー起動後の自動終了シーケンスが進行中かどうか。
+    public private(set) var isTerminatingForUpdate = false
     /// 適用処理中のフェーズおよび進捗。
     public private(set) var installProgress: UpdateInstallProgress?
     /// 検出された最新の利用可能リリース。
@@ -60,6 +62,13 @@ public final class UpdateViewModel {
     /// メニューやボタンで現在アップデート確認を実行可能かどうかを返す。
     public var canCheckForUpdates: Bool {
         !isChecking && !isInstalling
+    }
+
+    /// 更新確認シートの対話的クローズを抑止すべきかどうかを返す。
+    /// ダウンロード・検証・ヘルパー起動中は誤操作防止のため `true` を維持し、
+    /// ヘルパー起動完了後の自動終了フェーズではシートを確実に閉じるため `false` を返す。
+    public var shouldPreventPromptDismissal: Bool {
+        isInstalling && !isTerminatingForUpdate
     }
 
     /// PrefSnap 本体がスキャン・適用・ロールバック処理中かどうかを返す。
@@ -173,6 +182,7 @@ public final class UpdateViewModel {
         }
 
         isInstalling = true
+        isTerminatingForUpdate = false
         promptErrorMessage = nil
         installProgress = .downloading(fractionCompleted: 0.0)
 
@@ -182,10 +192,13 @@ public final class UpdateViewModel {
                     self?.installProgress = progress
                 }
             }
-            // 分離ヘルパー起動が完了したら確認ダイアログに阻害されずにアプリを終了する
+            // 分離ヘルパー起動完了後、シートの閉じ抑止を解除してシートを閉じてから自動終了ハンドラを呼び出す
+            isTerminatingForUpdate = true
+            isPromptPresented = false
             terminateForUpdateHandler()
         } catch let updateError as AppUpdateError {
             isInstalling = false
+            isTerminatingForUpdate = false
             installProgress = nil
             promptErrorMessage = updateError.localizedDescription
             checkFeedback = .error(
@@ -194,6 +207,7 @@ public final class UpdateViewModel {
             )
         } catch {
             isInstalling = false
+            isTerminatingForUpdate = false
             installProgress = nil
             let message = error.localizedDescription
             promptErrorMessage = message

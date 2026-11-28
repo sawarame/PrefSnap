@@ -782,10 +782,16 @@ struct UpdateViewModelTests {
         #expect(store.skippedUpdateVersion == "0.1.5")
     }
 
-    @Test("isBusy 中は自動アップデート開始をガードし、完了後はインストール後に自動終了ハンドラを呼ぶこと")
+    @Test("isBusy 中は自動アップデート開始をガードし、完了後はシートを閉じて自動終了ハンドラを呼ぶこと")
     func guardsUpdateInstallWhileAppIsBusyAndTerminatesOnSuccess() async {
         let isBusy = Box(true)
         let terminated = Box(false)
+        let promptPresentedAtTermination = Box<Bool?>(nil)
+        let preventDismissalAtTermination = Box<Bool?>(nil)
+        let terminatingFlagAtTermination = Box<Bool?>(nil)
+        let installingFlagAtTermination = Box<Bool?>(nil)
+        let viewModelBox = Box<UpdateViewModel?>(nil)
+
         let service = MockAppUpdateService(fetchResult: .success(sampleRelease))
         service.progressEventsToEmit = [.downloading(fractionCompleted: 0.5), .preparingReplacement]
 
@@ -795,24 +801,41 @@ struct UpdateViewModelTests {
             currentIdentity: releaseIdentity,
             currentVersionInfo: currentVersion,
             isAppBusyProvider: { isBusy.value },
-            terminateForUpdateHandler: { terminated.value = true }
+            terminateForUpdateHandler: {
+                terminated.value = true
+                promptPresentedAtTermination.value = viewModelBox.value?.isPromptPresented
+                preventDismissalAtTermination.value = viewModelBox.value?.shouldPreventPromptDismissal
+                terminatingFlagAtTermination.value = viewModelBox.value?.isTerminatingForUpdate
+                installingFlagAtTermination.value = viewModelBox.value?.isInstalling
+            }
         )
+        viewModelBox.value = viewModel
 
         await viewModel.checkForUpdatesManually()
         #expect(viewModel.isPromptPresented == true)
+        #expect(viewModel.shouldPreventPromptDismissal == false)
 
         // isBusy == true の間は開始されず案内メッセージが設定される
         await viewModel.startUpdateInstall()
         #expect(service.installCallCount == 0)
         #expect(viewModel.promptErrorMessage == AppUpdateError.appIsBusy.localizedDescription)
         #expect(terminated.value == false)
+        #expect(viewModel.isPromptPresented == true)
 
-        // isBusy == false になればインストールを実行し、成功後に自動終了ハンドラが呼ばれる
+        // isBusy == false になればインストールを実行し、成功後にシートを閉じてから自動終了ハンドラが呼ばれる
         isBusy.value = false
         await viewModel.startUpdateInstall()
         #expect(service.installCallCount == 1)
         #expect(service.lastInstallTargetURL == URL(fileURLWithPath: "/Applications/PrefSnap.app"))
         #expect(terminated.value == true)
+        #expect(promptPresentedAtTermination.value == false)
+        #expect(preventDismissalAtTermination.value == false)
+        #expect(terminatingFlagAtTermination.value == true)
+        #expect(installingFlagAtTermination.value == true)
+        // 終了完了までの間は多重実行・確認操作がガードされ続けること
+        #expect(viewModel.canCheckForUpdates == false)
+        #expect(viewModel.isPromptPresented == false)
+        #expect(viewModel.shouldPreventPromptDismissal == false)
     }
 
     @Test("開発版の手動確認や差し替え不可環境で適切にフォールバック案内されること")
@@ -890,6 +913,8 @@ struct UpdateViewModelTests {
         await installVM.startUpdateInstall()
 
         #expect(installVM.isInstalling == false)
+        #expect(installVM.isTerminatingForUpdate == false)
+        #expect(installVM.shouldPreventPromptDismissal == false)
         #expect(installVM.installProgress == nil)
         #expect(installVM.promptErrorMessage?.contains("Team ID") == true)
     }
