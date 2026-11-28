@@ -614,4 +614,186 @@ struct SnapshotApplierAndRollbackTests {
             }
         }
     }
+
+    /// macOS 27 形式の未存在キー削除 stderr が返った場合に通常設定および修飾キーリセットのいずれも成功扱いになることを検証する。
+    @Test("defaults delete で macOS 27 形式の未存在キーエラーが返った場合は成功扱いになること")
+    func defaultsDeleteTreatsMacOS27MissingKeyAsSuccessForDefaultsAndModifiers() throws {
+        let commandRunner = MockCommandRunner()
+        commandRunner.customHandler = { executable, arguments in
+            guard executable == "/usr/bin/defaults" else {
+                return CommandOutput(exitCode: 0)
+            }
+            var args = arguments
+            if args.first == "-currentHost" {
+                args.removeFirst()
+            }
+            let verb = args[0]
+            let domain = args[1]
+            let key = args.count >= 3 ? args[2] : ""
+
+            if verb == "delete" {
+                return CommandOutput(
+                    exitCode: 1,
+                    stderr: "Error: Could not find key '\(key)' in domain '\(domain)'.\nDefaults have not been changed.\n"
+                )
+            }
+            if verb == "export" {
+                return CommandOutput(exitCode: 1, stderr: "Error: Domain '\(domain)' not found.\n")
+            }
+            return CommandOutput(exitCode: 1, stderr: "Error: Could not find key '\(key)' in domain '\(domain)'.")
+        }
+
+        let plistStore = MockPlistStore()
+        let keyboard = ConnectedKeyboard(vendorID: 1452, productID: 832, deviceName: "Apple Internal Keyboard", isBuiltIn: true)
+        let keyboardDetector = MockKeyboardDetector(keyboards: [keyboard])
+        let fileStore = MockFileStore()
+        let processController = MockProcessController()
+        let environment = MockEnvironmentProvider()
+
+        let exporter = SnapshotExporter(
+            commandRunner: commandRunner,
+            plistStore: plistStore,
+            keyboardDetector: keyboardDetector,
+            environment: environment
+        )
+        let backupManager = BackupManager(fileStore: fileStore, environment: environment)
+        let applier = SnapshotApplier(
+            commandRunner: commandRunner,
+            plistStore: plistStore,
+            keyboardDetector: keyboardDetector,
+            processController: processController,
+            backupManager: backupManager,
+            exporter: exporter
+        )
+
+        let descriptor = try #require(SettingCatalog.defaultsItemsByID["dock.tilesize"])
+        let items: [DiffItem] = [
+            DiffItem(
+                id: "defaults:dock.tilesize",
+                category: .systemDefaults,
+                subcategoryLabel: "Dock",
+                title: descriptor.displayName,
+                detail: "",
+                beforeDisplay: "48",
+                afterDisplay: "未設定へ戻す（削除）",
+                action: .defaultsSetting(descriptor: descriptor, newValue: nil),
+                restartTargets: descriptor.restartTargets,
+                requiresRelogin: false,
+                isSelected: true
+            ),
+            DiffItem(
+                id: "modifier:1452-832",
+                category: .modifierMappings,
+                subcategoryLabel: "内蔵キーボード",
+                title: keyboard.deviceName,
+                detail: "",
+                beforeDisplay: "Caps Lock → 左 Control",
+                afterDisplay: "標準",
+                action: .modifierMapping(
+                    targetVendorID: keyboard.vendorID,
+                    targetProductID: keyboard.productID,
+                    targetDeviceName: keyboard.deviceName,
+                    mappings: []
+                ),
+                restartTargets: [],
+                requiresRelogin: true,
+                modifierMatchStatus: .exactMatch(keyboard),
+                isSelected: true
+            )
+        ]
+
+        let result = applier.apply(items: items, createBackupBeforeApply: false)
+        #expect(result.issues.isEmpty)
+        #expect(result.appliedCount == 2)
+    }
+
+    /// `defaults delete` で権限不足エラーや未知のコマンド失敗が発生した場合は無視せず `issues` として報告されることを検証する。
+    @Test("defaults delete で権限エラーやその他コマンドエラーが返った場合は issues に報告されること")
+    func defaultsDeleteReportsPermissionAndUnexpectedErrors() throws {
+        let commandRunner = MockCommandRunner()
+        commandRunner.customHandler = { executable, arguments in
+            guard executable == "/usr/bin/defaults" else {
+                return CommandOutput(exitCode: 0)
+            }
+            var args = arguments
+            if args.first == "-currentHost" {
+                args.removeFirst()
+            }
+            if args[0] == "delete" {
+                if args[1] == "com.apple.dock" {
+                    return CommandOutput(
+                        exitCode: 1,
+                        stderr: "Error: Could not find key 'tilesize' in domain 'com.apple.dock': Permission denied"
+                    )
+                }
+                return CommandOutput(exitCode: 2, stderr: "Unexpected delete failure")
+            }
+            return CommandOutput(exitCode: 0)
+        }
+
+        let plistStore = MockPlistStore()
+        let keyboard = ConnectedKeyboard(vendorID: 1452, productID: 832, deviceName: "Apple Internal Keyboard", isBuiltIn: true)
+        let keyboardDetector = MockKeyboardDetector(keyboards: [keyboard])
+        let fileStore = MockFileStore()
+        let processController = MockProcessController()
+        let environment = MockEnvironmentProvider()
+
+        let exporter = SnapshotExporter(
+            commandRunner: commandRunner,
+            plistStore: plistStore,
+            keyboardDetector: keyboardDetector,
+            environment: environment
+        )
+        let backupManager = BackupManager(fileStore: fileStore, environment: environment)
+        let applier = SnapshotApplier(
+            commandRunner: commandRunner,
+            plistStore: plistStore,
+            keyboardDetector: keyboardDetector,
+            processController: processController,
+            backupManager: backupManager,
+            exporter: exporter
+        )
+
+        let descriptor = try #require(SettingCatalog.defaultsItemsByID["dock.tilesize"])
+        let items: [DiffItem] = [
+            DiffItem(
+                id: "defaults:dock.tilesize",
+                category: .systemDefaults,
+                subcategoryLabel: "Dock",
+                title: descriptor.displayName,
+                detail: "",
+                beforeDisplay: "48",
+                afterDisplay: "未設定へ戻す（削除）",
+                action: .defaultsSetting(descriptor: descriptor, newValue: nil),
+                restartTargets: descriptor.restartTargets,
+                requiresRelogin: false,
+                isSelected: true
+            ),
+            DiffItem(
+                id: "modifier:1452-832",
+                category: .modifierMappings,
+                subcategoryLabel: "内蔵キーボード",
+                title: keyboard.deviceName,
+                detail: "",
+                beforeDisplay: "Caps Lock → 左 Control",
+                afterDisplay: "標準",
+                action: .modifierMapping(
+                    targetVendorID: keyboard.vendorID,
+                    targetProductID: keyboard.productID,
+                    targetDeviceName: keyboard.deviceName,
+                    mappings: []
+                ),
+                restartTargets: [],
+                requiresRelogin: true,
+                modifierMatchStatus: .exactMatch(keyboard),
+                isSelected: true
+            )
+        ]
+
+        let result = applier.apply(items: items, createBackupBeforeApply: false)
+        #expect(result.appliedCount == 0)
+        #expect(result.issues.count == 2)
+        #expect(result.issues.contains { $0.isPermissionError && $0.systemSettingsURL == SystemPreferencesURL.fullDiskAccess })
+        #expect(result.issues.contains { !$0.isPermissionError && $0.message.contains("Unexpected delete failure") })
+    }
 }
