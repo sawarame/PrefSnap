@@ -48,6 +48,7 @@ private struct MainWindowAccessor: NSViewRepresentable {
 /// 標準タイトルバーの下に固定左メニューとメイン画面を並べる構成を採用している。
 struct ContentView: View {
     @Bindable var viewModel: AppViewModel
+    @Bindable var updateViewModel: UpdateViewModel
     /// メインウィンドウが利用可能になった際に呼び出されるコールバック。
     var onMainWindowAttached: (@MainActor (NSWindow) -> Void)? = nil
 
@@ -93,6 +94,8 @@ struct ContentView: View {
                         ImportView(viewModel: viewModel)
                     case .rollback:
                         RollbackView(viewModel: viewModel)
+                    case .settings:
+                        SettingsView(updateViewModel: updateViewModel)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -105,8 +108,17 @@ struct ContentView: View {
                 MainWindowAccessor(onWindowAttached: onMainWindowAttached)
             }
         }
+        .sheet(isPresented: $updateViewModel.isPromptPresented) {
+            UpdatePromptView(
+                updateViewModel: updateViewModel,
+                isAppBusy: viewModel.isBusy
+            )
+        }
         .onAppear {
             viewModel.refreshBackups()
+        }
+        .task {
+            await updateViewModel.performAutomaticCheckIfNeeded()
         }
     }
 

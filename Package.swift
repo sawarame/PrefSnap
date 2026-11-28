@@ -29,7 +29,8 @@ let package = Package(
         .target(
             name: "PrefSnapCore",
             linkerSettings: [
-                .linkedFramework("IOKit")
+                .linkedFramework("IOKit"),
+                .linkedFramework("Security")
             ]
         ),
         .executableTarget(

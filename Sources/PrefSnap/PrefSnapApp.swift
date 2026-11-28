@@ -101,6 +101,11 @@ final class PrefSnapAppDelegate: NSObject, NSApplicationDelegate {
         self.isBusyProvider = isBusyProvider
     }
 
+    /// 自動アップデート再起動に伴う終了要求時に終了確認ダイアログをバイパスできるよう準備する。
+    func prepareForAutomaticTermination() {
+        terminationCoordinator?.prepareForAutomaticTermination()
+    }
+
     /// メインウィンドウへクローズ制御用のデリゲートプロキシを接続する。
     /// - Parameter window: フック対象となるメインの `NSWindow`
     func attachMainWindow(_ window: NSWindow) {
@@ -210,22 +215,54 @@ final class PrefSnapAppDelegate: NSObject, NSApplicationDelegate {
 struct PrefSnapApp: App {
     @NSApplicationDelegateAdaptor(PrefSnapAppDelegate.self) private var appDelegate
     private let viewModel: AppViewModel
+    private let updateViewModel: UpdateViewModel
 
-    /// ルートアプリケーションを初期化し、AppDelegate へ `isBusy` 参照を接続する。
+    /// ルートアプリケーションを初期化し、AppDelegate へ `isBusy` 参照および自動アップデート終了連携を接続する。
     init() {
+        /// `self` の全プロパティ初期化後に `appDelegate` を安全に束縛するための参照ホルダ。
+        @MainActor
+        final class DelegateHolder {
+            weak var delegate: PrefSnapAppDelegate?
+        }
+
+        let delegateHolder = DelegateHolder()
         let viewModel = AppViewModel()
+        let updateViewModel = UpdateViewModel(
+            isAppBusyProvider: { viewModel.isBusy },
+            openURLHandler: { url in
+                NSWorkspace.shared.open(url)
+            },
+            terminateForUpdateHandler: {
+                // ヘルパー起動完了後は終了確認ダイアログでブロックされず確実に終了させる
+                delegateHolder.delegate?.prepareForAutomaticTermination()
+                NSApplication.shared.terminate(nil)
+            }
+        )
         self.viewModel = viewModel
-        appDelegate.configure(isBusyProvider: { viewModel.isBusy })
+        self.updateViewModel = updateViewModel
+        delegateHolder.delegate = appDelegate
+        appDelegate.configure(isBusyProvider: { viewModel.isBusy || updateViewModel.isInstalling })
     }
 
     var body: some Scene {
         Window("PrefSnap", id: "main") {
-            ContentView(viewModel: viewModel) { window in
+            ContentView(viewModel: viewModel, updateViewModel: updateViewModel) { window in
                 appDelegate.attachMainWindow(window)
             }
             .frame(minWidth: 920, minHeight: 620)
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1080, height: 720)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("アップデートを確認…") {
+                    viewModel.selectedSection = .settings
+                    Task {
+                        await updateViewModel.checkForUpdatesManually()
+                    }
+                }
+                .disabled(!updateViewModel.canCheckForUpdates)
+            }
+        }
     }
 }
