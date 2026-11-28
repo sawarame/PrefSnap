@@ -63,12 +63,21 @@ struct ContentView: View {
 
             VStack(spacing: 0) {
                 if let errorBanner = viewModel.errorBannerMessage {
-                    HStack(spacing: 10) {
+                    HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
                         Text(errorBanner)
                             .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
                         Spacer()
+                        CopyReportButton {
+                            ErrorReportFormatter.formatMessage(
+                                title: "エラーが発生しました",
+                                message: errorBanner,
+                                environment: currentDiagnosticEnvironment
+                            )
+                        }
                         Button("閉じる") {
                             viewModel.errorBannerMessage = nil
                         }
@@ -81,6 +90,7 @@ struct ContentView: View {
                 if !viewModel.activeIssues.isEmpty {
                     PermissionIssueBanner(
                         issues: viewModel.activeIssues,
+                        diagnosticEnvironment: currentDiagnosticEnvironment,
                         onOpenSettings: { url in viewModel.openSystemSettings(url) },
                         onDismiss: { viewModel.activeIssues = [] }
                     )
@@ -120,6 +130,15 @@ struct ContentView: View {
         .task {
             await updateViewModel.performAutomaticCheckIfNeeded()
         }
+    }
+
+    /// エラー・警告コピー時にヘッダーへ付与する現在の環境情報を返す。
+    /// - Returns: アプリ識別情報・バージョン・OS 情報をまとめた `DiagnosticEnvironment`
+    private var currentDiagnosticEnvironment: DiagnosticEnvironment {
+        DiagnosticEnvironment.current(
+            identity: updateViewModel.currentIdentity,
+            versionInfo: updateViewModel.currentVersionInfo
+        )
     }
 
     /// 常に全項目が視認できる固定左メニュー。
