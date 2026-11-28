@@ -204,4 +204,30 @@ struct AppTerminationCoordinatorTests {
         #expect(coordinator.shouldAllowApplicationTermination() == true)
         #expect(confirmationCount.value == 2)
     }
+
+    @Test("自動アップデート再起動の準備後は isBusy 中でも確認ダイアログなしで即終了を許可すること")
+    func automaticTerminationBypassAllowsTerminationEvenWhenBusy() {
+        let confirmationCount = Box(0)
+        let coordinator = AppTerminationCoordinator(
+            isBusyProvider: { true },
+            confirmTermination: { _ in
+                confirmationCount.value += 1
+                return .continueProcessing
+            }
+        )
+
+        coordinator.prepareForAutomaticTermination()
+        #expect(coordinator.isAutomaticTerminationApproved == true)
+        #expect(coordinator.hasConfirmedTermination == true)
+
+        // 自動アップデート再起動時はウィンドウクローズもアプリ終了も確認ダイアログを出さず許可する
+        #expect(coordinator.shouldAllowWindowClose() == true)
+        #expect(coordinator.shouldAllowApplicationTermination() == true)
+        #expect(confirmationCount.value == 0)
+
+        // 自動終了承認済みの場合はキャンセル通知が来ても承認状態が解除されないこと
+        coordinator.cancelPendingWindowCloseTermination()
+        #expect(coordinator.shouldAllowApplicationTermination() == true)
+        #expect(confirmationCount.value == 0)
+    }
 }

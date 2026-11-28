@@ -9,14 +9,18 @@ enum AppSection: String, CaseIterable, Identifiable {
     case export = "エクスポート"
     case importDiff = "インポート（差分適用）"
     case rollback = "履歴 / ロールバック"
+    case settings = "設定"
 
+    /// 一意識別子（表示名と同一）。
     var id: String { rawValue }
 
+    /// サイドバーに表示する SF Symbols アイコン名。
     var systemImage: String {
         switch self {
         case .export: return "square.and.arrow.up"
         case .importDiff: return "square.and.arrow.down"
         case .rollback: return "clock.arrow.circlepath"
+        case .settings: return "gearshape"
         }
     }
 }

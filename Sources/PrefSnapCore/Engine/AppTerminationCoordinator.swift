@@ -27,6 +27,9 @@ public final class AppTerminationCoordinator {
     /// ウィンドウクローズ確認などでユーザーがすでに終了を承認済みかどうか。
     public private(set) var hasConfirmedTermination = false
 
+    /// 自動アップデート再起動などアプリ側主導の自動終了が進行中かどうか。
+    public private(set) var isAutomaticTerminationApproved = false
+
     /// 終了確認ダイアログを現在表示中かどうか（多重表示・再入防止用）。
     public private(set) var isConfirmationPresented = false
 
@@ -42,9 +45,21 @@ public final class AppTerminationCoordinator {
         self.confirmTermination = confirmTermination
     }
 
+    /// 自動アップデート再起動などアプリ主導の終了前に呼び出し、
+    /// 直後の終了要求で確認ダイアログにブロックされず確実に終了できるようにする。
+    public func prepareForAutomaticTermination() {
+        isAutomaticTerminationApproved = true
+        hasConfirmedTermination = true
+    }
+
     /// メインウィンドウを閉じてよいか判定する（`NSWindowDelegate.windowShouldClose(_:)` から呼び出す）。
     /// - Returns: ウィンドウを閉じる場合は `true`、キャンセルする場合は `false`
     public func shouldAllowWindowClose() -> Bool {
+        // 自動アップデートに伴う終了承認済みの場合は確認なしで即座に許可する
+        if isAutomaticTerminationApproved {
+            return true
+        }
+
         // すでに終了確認ダイアログを表示中であれば多重表示を防ぎクローズを拒否する
         guard !isConfirmationPresented else {
             return false
@@ -72,6 +87,7 @@ public final class AppTerminationCoordinator {
     /// ウィンドウクローズが他要因（元のデリゲート等）で取り消された場合に、
     /// ウィンドウクローズ確認で立てた終了承認状態をリセットする。
     public func cancelPendingWindowCloseTermination() {
+        guard !isAutomaticTerminationApproved else { return }
         hasConfirmedTermination = false
     }
 
@@ -85,6 +101,11 @@ public final class AppTerminationCoordinator {
     /// アプリを終了してよいか判定する（`NSApplicationDelegate.applicationShouldTerminate(_:)` から呼び出す）。
     /// - Returns: 即時終了する場合は `true`、終了を中止する場合は `false`
     public func shouldAllowApplicationTermination() -> Bool {
+        // 自動アップデートに伴う終了承認済みの場合は確認なしで即座に許可する
+        if isAutomaticTerminationApproved {
+            return true
+        }
+
         // すでに終了確認ダイアログを表示中であれば多重表示を防ぎ終了をキャンセルする
         guard !isConfirmationPresented else {
             return false
