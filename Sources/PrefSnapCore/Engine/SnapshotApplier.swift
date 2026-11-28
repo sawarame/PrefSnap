@@ -191,8 +191,10 @@ public struct SnapshotApplier: Sendable {
         } else {
             args.append(contentsOf: ["delete", descriptor.domain, descriptor.key])
             let output = try commandRunner.run(executable: "/usr/bin/defaults", arguments: args)
-            // すでに存在しないキーの削除は成功扱いとする
-            if output.exitCode != 0 && !output.stderr.lowercased().contains("not found") && !output.stderr.lowercased().contains("does not exist") {
+            // 権限不足は優先検出し、すでに存在しないキー・ドメインの削除のみ成功扱いとする
+            if output.exitCode != 0,
+               DefaultsCommandStderrClassifier.isPermissionDenied(output.stderr)
+                || !DefaultsCommandStderrClassifier.isMissingEntry(output.stderr) {
                 try validateDefaultsCommandOutput(output, args: args, targetName: "\(descriptor.domain) (\(descriptor.key))")
             }
         }
@@ -266,7 +268,10 @@ public struct SnapshotApplier: Sendable {
         if mappings.isEmpty {
             let args = ["-currentHost", "delete", "-g", key]
             let output = try commandRunner.run(executable: "/usr/bin/defaults", arguments: args)
-            if output.exitCode != 0 && !output.stderr.lowercased().contains("not found") && !output.stderr.lowercased().contains("does not exist") {
+            // 権限不足は優先検出し、すでに存在しないキー・ドメインの削除のみ成功扱いとする
+            if output.exitCode != 0,
+               DefaultsCommandStderrClassifier.isPermissionDenied(output.stderr)
+                || !DefaultsCommandStderrClassifier.isMissingEntry(output.stderr) {
                 try validateDefaultsCommandOutput(output, args: args, targetName: key)
             }
             return
@@ -284,8 +289,7 @@ public struct SnapshotApplier: Sendable {
 
     private func validateDefaultsCommandOutput(_ output: CommandOutput, args: [String], targetName: String) throws {
         guard output.exitCode != 0 else { return }
-        let lowerErr = output.stderr.lowercased()
-        if lowerErr.contains("permission denied") || lowerErr.contains("operation not permitted") || lowerErr.contains("not permitted") {
+        if DefaultsCommandStderrClassifier.isPermissionDenied(output.stderr) {
             throw PrefSnapError.permissionDenied(
                 target: targetName,
                 detail: output.stderr.trimmingCharacters(in: .whitespacesAndNewlines),

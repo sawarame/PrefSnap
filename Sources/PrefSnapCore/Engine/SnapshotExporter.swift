@@ -103,25 +103,23 @@ public struct SnapshotExporter: Sendable {
 
         let output = try commandRunner.run(executable: "/usr/bin/defaults", arguments: args)
         if output.exitCode != 0 {
-            let lowerErr = output.stderr.lowercased()
-            if lowerErr.contains("does not exist") || lowerErr.contains("domain") && lowerErr.contains("not found") {
-                return nil
-            }
-            if lowerErr.contains("permission denied") || lowerErr.contains("operation not permitted") || lowerErr.contains("not permitted") {
+            let trimmedStderr = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            // 権限不足エラーは未設定判定より優先して検出する
+            if DefaultsCommandStderrClassifier.isPermissionDenied(output.stderr) {
                 throw PrefSnapError.permissionDenied(
                     target: "\(descriptor.domain) (\(descriptor.key))",
-                    detail: output.stderr.trimmingCharacters(in: .whitespacesAndNewlines),
+                    detail: trimmedStderr,
                     settingsURL: SystemPreferencesURL.fullDiskAccess
                 )
             }
-            // キー未設定時は defaults が exitCode 1 を返すため、空出力かつエラーが一般的な未存在メッセージなら nil 扱い
-            if lowerErr.contains("the domain/default pair of") {
+            // キーまたはドメイン未設定時は defaults が exitCode 1 を返すため、未存在メッセージなら nil 扱いとする
+            if DefaultsCommandStderrClassifier.isMissingEntry(output.stderr) {
                 return nil
             }
             throw PrefSnapError.commandFailed(
                 command: (["defaults"] + args).joined(separator: " "),
                 exitCode: output.exitCode,
-                stderr: output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                stderr: trimmedStderr
             )
         }
 
@@ -165,18 +163,23 @@ public struct SnapshotExporter: Sendable {
 
         let output = try commandRunner.run(executable: "/usr/bin/defaults", arguments: args)
         if output.exitCode != 0 {
-            let lowerErr = output.stderr.lowercased()
-            if lowerErr.contains("does not exist") || (lowerErr.contains("domain") && lowerErr.contains("not found")) {
-                return nil
-            }
-            if lowerErr.contains("permission denied") || lowerErr.contains("operation not permitted") || lowerErr.contains("not permitted") {
+            let trimmedStderr = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            // 権限不足エラーは未設定判定より優先して検出する
+            if DefaultsCommandStderrClassifier.isPermissionDenied(output.stderr) {
                 throw PrefSnapError.permissionDenied(
                     target: "\(descriptor.domain) (\(descriptor.key))",
-                    detail: output.stderr.trimmingCharacters(in: .whitespacesAndNewlines),
+                    detail: trimmedStderr,
                     settingsURL: SystemPreferencesURL.fullDiskAccess
                 )
             }
-            return nil
+            if DefaultsCommandStderrClassifier.isMissingEntry(output.stderr) {
+                return nil
+            }
+            throw PrefSnapError.commandFailed(
+                command: (["defaults"] + args).joined(separator: " "),
+                exitCode: output.exitCode,
+                stderr: trimmedStderr
+            )
         }
 
         let trimmed = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)

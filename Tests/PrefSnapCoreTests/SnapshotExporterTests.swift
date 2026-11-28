@@ -182,4 +182,122 @@ struct SnapshotExporterTests {
         #expect(hasFullDiskAccessLink)
         #expect(hasInputMonitoringLink)
     }
+
+    /// `DefaultsCommandStderrClassifier` が macOS 27 形式・従来形式・権限エラー・その他エラーを正しく分類できることを検証する。
+    @Test("DefaultsCommandStderrClassifier の未存在判定と権限エラー優先判定")
+    func defaultsStderrClassifierHandlesMacOS27AndLegacyMessages() {
+        // macOS 27 以降のキー未存在・ドメイン未存在メッセージ
+        #expect(DefaultsCommandStderrClassifier.isMissingEntry("Error: Could not find key 'tilesize' in domain 'com.apple.dock'."))
+        #expect(DefaultsCommandStderrClassifier.isMissingEntry("Error: Domain 'com.apple.controlcenter.bentoboxes' not found."))
+
+        // 従来の macOS 形式
+        #expect(DefaultsCommandStderrClassifier.isMissingEntry("The domain/default pair of (com.apple.dock, tilesize) does not exist"))
+        #expect(DefaultsCommandStderrClassifier.isMissingEntry("Domain (com.apple.dock) not found."))
+
+        // 権限エラーは未存在扱いせず、permissionDenied として優先分類すること
+        let mixedPermissionMsg = "Error: Could not find key 'tilesize' in domain 'com.apple.dock': Operation not permitted"
+        #expect(DefaultsCommandStderrClassifier.isPermissionDenied(mixedPermissionMsg))
+        #expect(!DefaultsCommandStderrClassifier.isMissingEntry(mixedPermissionMsg))
+        #expect(DefaultsCommandStderrClassifier.isPermissionDenied("Permission denied"))
+
+        // 不明なコマンドエラーは未存在扱いしないこと
+        #expect(!DefaultsCommandStderrClassifier.isMissingEntry("defaults: invalid option -- z"))
+        #expect(!DefaultsCommandStderrClassifier.isMissingEntry("zsh: command not found: defaults"))
+    }
+
+    /// macOS 27 形式の未存在 stderr を返す環境でスキャンしても、未設定項目がエラー扱いにならないことを検証する。
+    @Test("macOS 27 形式の未設定キー・未存在ドメイン stderr が SnapshotExporter で未設定扱いになること")
+    func macOS27MissingKeyAndDomainStderrAreTreatedAsUnsetWithoutIssues() {
+        let commandRunner = MockCommandRunner()
+        commandRunner.customHandler = { executable, arguments in
+            guard executable == "/usr/bin/defaults" else {
+                return CommandOutput(exitCode: 0)
+            }
+            var args = arguments
+            if args.first == "-currentHost" {
+                args.removeFirst()
+            }
+            guard args.count >= 3 else {
+                return CommandOutput(exitCode: 1, stderr: "invalid arguments")
+            }
+            let verb = args[0]
+            let domain = args[1]
+            let key = args[2]
+
+            if verb == "read" && domain == "com.apple.dock" && key == "autohide" {
+                return CommandOutput(exitCode: 0, stdout: "1\n")
+            }
+            if verb == "export" {
+                // macOS 27 形式のドメイン未存在エラーをシミュレートする
+                return CommandOutput(exitCode: 1, stderr: "Error: Domain '\(domain)' not found.\n")
+            }
+            // macOS 27 形式のキー未存在エラーをシミュレートする
+            return CommandOutput(exitCode: 1, stderr: "Error: Could not find key '\(key)' in domain '\(domain)'.\n")
+        }
+
+        let exporter = SnapshotExporter(
+            commandRunner: commandRunner,
+            plistStore: MockPlistStore(),
+            keyboardDetector: MockKeyboardDetector(),
+            environment: MockEnvironmentProvider()
+        )
+        let report = exporter.exportSnapshot()
+
+        #expect(report.issues.isEmpty)
+        #expect(report.snapshot.systemDefaults["dock.autohide"]?.value == .bool(true))
+        #expect(report.snapshot.systemDefaults.keys.contains("dock.tilesize"))
+        #expect(report.snapshot.systemDefaults["dock.tilesize"]?.value == nil)
+        #expect(report.snapshot.menuBar.keys.contains("menubar.controlcenter.bentoboxes"))
+        #expect(report.snapshot.menuBar["menubar.controlcenter.bentoboxes"]?.value == nil)
+    }
+
+    /// 未存在にも権限不足にも該当しない異常終了時は従来通り `issues` にコマンド失敗が報告されることを検証する。
+    @Test("未存在・権限不足以外の defaults コマンド異常終了は issues として報告されること")
+    func unexpectedDefaultsCommandFailuresAreStillReportedAsIssues() {
+        let commandRunner = MockCommandRunner()
+        commandRunner.customHandler = { executable, arguments in
+            guard executable == "/usr/bin/defaults" else {
+                return CommandOutput(exitCode: 0)
+            }
+            var args = arguments
+            if args.first == "-currentHost" {
+                args.removeFirst()
+            }
+            let verb = args[0]
+            let domain = args[1]
+            let key = args[2]
+
+            // 通常 read で未知エラーを発生させる
+            if verb == "read" && domain == "com.apple.dock" && key == "tilesize" {
+                return CommandOutput(exitCode: 2, stderr: "Unexpected defaults internal failure")
+            }
+            // Data export で未知エラーを発生させる
+            if verb == "export" && domain == "com.apple.controlcenter.bentoboxes" {
+                return CommandOutput(exitCode: 2, stderr: "Unexpected export failure")
+            }
+            // 権限エラーを発生させる
+            if verb == "read" && domain == "com.apple.finder" && key == "ShowPathbar" {
+                return CommandOutput(exitCode: 1, stderr: "Error: Could not find key 'ShowPathbar' in domain 'com.apple.finder': Operation not permitted")
+            }
+            return CommandOutput(exitCode: 1, stderr: "Error: Could not find key '\(key)' in domain '\(domain)'.")
+        }
+
+        let exporter = SnapshotExporter(
+            commandRunner: commandRunner,
+            plistStore: MockPlistStore(),
+            keyboardDetector: MockKeyboardDetector(),
+            environment: MockEnvironmentProvider()
+        )
+        let report = exporter.exportSnapshot()
+
+        #expect(report.issues.count == 3)
+        let permissionIssues = report.issues.filter(\.isPermissionError)
+        #expect(permissionIssues.count == 1)
+        #expect(permissionIssues.first?.systemSettingsURL == SystemPreferencesURL.fullDiskAccess)
+
+        let commandIssues = report.issues.filter { !$0.isPermissionError }
+        #expect(commandIssues.count == 2)
+        #expect(commandIssues.contains { $0.message.contains("Unexpected defaults internal failure") })
+        #expect(commandIssues.contains { $0.message.contains("Unexpected export failure") })
+    }
 }
