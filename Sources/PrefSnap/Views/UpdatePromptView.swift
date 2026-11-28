@@ -19,6 +19,7 @@ struct UpdatePromptView: View {
                 statusBanner(
                     iconName: "exclamationmark.circle.fill",
                     tintColor: .orange,
+                    title: "アップデートの自動適用対象外",
                     message: ineligibilityMessage
                 )
             }
@@ -27,6 +28,7 @@ struct UpdatePromptView: View {
                 statusBanner(
                     iconName: "hourglass",
                     tintColor: .orange,
+                    title: "処理中のため待機中",
                     message: AppUpdateError.appIsBusy.localizedDescription
                 )
             }
@@ -35,6 +37,7 @@ struct UpdatePromptView: View {
                 statusBanner(
                     iconName: "exclamationmark.triangle.fill",
                     tintColor: .red,
+                    title: "アップデートエラー",
                     message: errorMessage
                 )
             }
@@ -131,20 +134,37 @@ struct UpdatePromptView: View {
         }
     }
 
-    /// 警告またはエラー内容を表示する共通バナー。
+    /// 警告またはエラー内容を表示する共通バナー（環境情報付きコピーボタン対応）。
     /// - Parameters:
     ///   - iconName: SF Symbols アイコン名
     ///   - tintColor: バナーの強調色
+    ///   - title: コピー時に付与する警告・エラー種別タイトル
     ///   - message: 表示する日本語メッセージ
     /// - Returns: バナービュー
-    private func statusBanner(iconName: String, tintColor: Color, message: String) -> some View {
+    private func statusBanner(
+        iconName: String,
+        tintColor: Color,
+        title: String,
+        message: String
+    ) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: iconName)
                 .foregroundStyle(tintColor)
             Text(message)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
             Spacer()
+            CopyReportButton {
+                ErrorReportFormatter.formatMessage(
+                    title: title,
+                    message: message,
+                    environment: DiagnosticEnvironment.current(
+                        identity: updateViewModel.currentIdentity,
+                        versionInfo: updateViewModel.currentVersionInfo
+                    )
+                )
+            }
         }
         .padding(10)
         .background(tintColor.opacity(0.12))

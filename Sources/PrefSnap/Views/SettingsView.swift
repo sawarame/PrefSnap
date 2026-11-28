@@ -215,6 +215,7 @@ struct SettingsView: View {
                     Text(message)
                         .font(.callout)
                         .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                     if showReleasesLink {
                         Button("GitHub Releases を開く") {
                             updateViewModel.openReleasesPage()
@@ -224,6 +225,16 @@ struct SettingsView: View {
                     }
                 }
                 Spacer()
+                CopyReportButton {
+                    ErrorReportFormatter.formatMessage(
+                        title: "アップデート確認エラー",
+                        message: message,
+                        environment: DiagnosticEnvironment.current(
+                            identity: updateViewModel.currentIdentity,
+                            versionInfo: updateViewModel.currentVersionInfo
+                        )
+                    )
+                }
             }
             .padding(12)
             .background(Color.red.opacity(0.10))
