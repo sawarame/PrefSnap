@@ -53,7 +53,7 @@ struct UpdatePromptView: View {
         .padding(20)
         .frame(width: 560)
         .frame(minHeight: 420)
-        .interactiveDismissDisabled(updateViewModel.isInstalling)
+        .interactiveDismissDisabled(updateViewModel.shouldPreventPromptDismissal)
     }
 
     /// タイトル・バージョン遷移・GitHub リリースページリンクを表示するヘッダー。
